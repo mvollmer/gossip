@@ -1,0 +1,7 @@
+cat *.c *.h | tr -cs A-Za-z0-9_ \\n | sort | uniq |
+grep -i canvas | grep -i gnome |
+awk ' { x=$1;
+        sub("gnome", "gossip", x);
+        sub("Gnome", "Gossip", x);
+        sub("GNOME", "GOSSIP", x);
+        print "s/" $1 "/" x "/g" }'

@@ -1,0 +1,179 @@
+2001-07-04  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* gossip-ed-mockup (port-bus-width-using-component): Pass fake id
+	to get-bus-width.
+
+2001-06-27  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* gossip-ed-mockup (initialize sheet): Bug fix: set sheet-root to
+	existing root in `root' variable, do not create a new one.
+	(get-bus-width): Move width check completely to run-time.
+
+2001-06-15  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* gossip-ed-mockup: Keep comps, wires and blobs in separate
+	layers.  Make transparent blobs be really transparent.  Make wires
+	easier to hit by giving them a hit_width of 10.  Do not check for
+	loops when merging blobs, it's not needed.  Connects ports only
+	when they aren't already directly connected.  Do not accidentally
+	merge blobs while moving more than one of them.
+	
+	* libgossipcanvas/gossip-canvas-rect-ellipse.c
+	(gossip_canvas_ellipse_point): Ellispes without outline are
+	considered to be filled for hit detection.
+
+	* libgossipcanvas/gossip-canvas.c (gossip_canvas_get_color): Treat
+	the empty string as transparent as well.
+
+	* libgossipcanvas/gossip-canvas-line.h
+	(GossipCanvasLine::hit_width): New parameter.  
+	* libgossipcanvas/gossip-canvas-line.c
+	(gossip_canvas_line_set_arg): Set it.
+	(gossip_canvas_line_point): Use it instead of "width" when its
+	positive.
+
+2001-06-05  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* gossip-ed-mockup: Use `re-export' instead of `export' where
+	appropriate.  Added "Documentation" menu entry for block
+	components.
+
+2001-05-23  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* gossip-ed-mockup (save-and-run): Removed.
+	(*button-box*, add-button): New.
+	(fill-top-level): Do not create "Save & Run" button.  Initialize
+	*button-box*.
+	(load-user-rc): New.
+	(main): Call it.
+	
+2001-05-22  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* gossip-ed-mockup: Use simple-format instead of the much slower
+	format throughout.  Use "\n" instead of "~%" in format strings.
+	Add "verbose" to global props.  Activate global props on startup.
+	
+	* libgossipcanvas/gossip-canvas-extra-glue.c
+	(gossip_canvas_init_extra_glue): Use scm_c_define_gsubr instead of
+	scm_make_gsubr.
+
+	* gossip-ed-mockup (initialize of block-comp): Do not add `name'
+	generic if it is already present.
+
+2001-03-21  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* gossip-ed-mockup: Switched to new define-method
+	syntax. (update-libraries): Do not call `string->symbol' a second
+	times on the names.
+	(find-comp-port): Compare names with `eq?' since they are symbols.
+	
+2000-08-25  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* canvas.defs, libgossipcanvas/gossip-canvas-text.c,
+	libgossipcanvas/gossip-canvas-text.h (set_zoom_fonts,
+	gossip_canvas_text_set_zoom_fonts): Expect GdkFonts instead of
+	strings.  Set bounding box to zero when being invisible.
+
+2000-08-04  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	Released 0.5.0
+	
+	* configure.in: Bumped version to 0.5.0
+
+	* Makefile.am (EXTRA_DIST): Added canonicalize-prefixes.
+
+	* doc/Makefile.am (EXTRA_DIST): Added mocku-tutorial.texi
+	(PICS_PNG): Use it for real and specify all pngs.
+
+2000-07-20  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip-ed-mockup: Various fixes, including getting the order of
+	signals right that are collected by bus multiplexers.
+
+2000-05-24  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* libgossipcanvas/canvas.defs (GtkAnchorType, gdk_string_width):
+	Removed, they are now in guile-gtk.
+
+	* gossip-ed-mockup: Swapped names of multiplexer and
+	demultiplexer.  Be more careful when destroying canvas items.
+	Unselect wire when it is destroyed.
+	
+2000-05-22  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* Makefile.am: Don't distribute test.scm any longer, cause
+	gossip-ed-mockup to be installed in $(bindir), distribute
+	gossip-ed-mockup.
+	
+	* mockup.scm, gossip-ed-mockup: Renamed.
+
+	* Makefile.am, configure.in: Added doc subdirectory to build
+	process.
+
+2000-05-09  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* libgossipcanvas/gossip-canvas-text.h
+	(GossipCanvasText::dont_draw): New field.
+	* libgossipcanvas/gossip-canvas-text.c (pick_zoom_font): Set
+	dont_draw to true when expansion is too small, else to false.
+	(gossip_canvas_text_draw): Don't draw when dont_draw is true.
+	(gossip_canvas_text_init): Set dont_draw to false.
+	
+2000-04-10  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* canonicalize-prefixes: New.
+	* configure.in (GTK_PLUS_GUILE_GTK_CFLAGS): New, canonical
+	concatenation of GTK_CFLAGS and GUILE_GTK_CFLAGS.
+	* libgossipcanvas/Makefile.am (INCLUDES): Use it.
+
+2000-04-08  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* libgossipcanvas/canvas.defs (gdk_string_width): New.
+
+2000-04-06  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* libgossipcanvas/canvas.defs (gossip_canvas_window_to_world):
+	New.
+
+2000-04-03  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* libgossipcanvas/Makefile.am (gossip-canvas-glue.c): Use `$<' to
+	enable vpath builds.
+
+2000-04-01  Marius Vollmer  <mvo@zagadka.ping.de>
+	
+	* libgossipcanvas/gossip-canvas.h (gossip_canvas): New fields for
+	`floater' support.
+
+	* libgossipcanvas/gossip-canvas.c (gossip_canvas_item_shutdown):
+	When item is floater, reset floater.
+	(emit_event): Do not emit item events when there is a floater.
+	(gossip_canvas_init): Initialize floater.
+	(gossip_canvas_destroy): Reset floater.
+	(togrid, place_floater): New.
+	(gossip_canvas_motion): Move floater.
+	(gossip_canvas_crossing): Hide/show floater.
+	(gossip_canvas_set_float_item, gossip_canvas_get_flot_pos): New.
+	
+	* libgossipcanvas/canvas.defs: Include gtk-1.2.defs instead of
+	gtk-1.2.defs.
+	(GtkAnchorType, gossip_canvas_set_float_item,
+	gossip_canvas_get_flot_pos): New.
+	
+2000-03-30  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* libgossipcanvas/Makefile.am (INCLUDES): Use GUILE_GTK_CFLAGS.
+
+	* configure.in (GUILE_GTK_CFLAGS): Check for CFLAGS to use with
+	guile-gtk related files.
+
+	* Makefile.am (bin_PROGRAMS): Removed guile-gossip-ed and related
+	Makefile variables.
+	(EXTRA_DIST): Distribute test.scm instead of example/test2.scm.
+	(snap): Use $(PACKAGE) to get name of package.
+	
+1999-01-30  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* Started ChangeLog.
+
+

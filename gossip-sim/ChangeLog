@@ -1,0 +1,1257 @@
+2003-03-24  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	Released 0.9.1
+	
+	* doc/extract-index (index-head-regexp): New, to find the "Block
+	Index" header.
+
+	* configure.in: Bumped version to 0.9.1.
+
+	* src/Makefile.am (libguilegossip_la_LIBADD): Added "-lstdc++" so
+	that it works with GCC 3.
+
+2003-01-04  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynsim.cc (schedule_comps): Do not default arguments.  They
+	can only be defaulted in the prototype.
+
+	* gossip/sim.h (sim_complex): Use std::complex instead of complex.
+
+	* src/comp.cc, src/dynblock.cc, src/dyncomp.cc, src/dynsim.cc,
+	src/generics.cc: Removed uses of HAVE_SCM_SIMPLE_FORMAT.  We
+	always use "~A" style format specifiers now.
+
+2002-09-19  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim-builtin.scm: Removed ".so" extension from library name.
+
+	All files: removed special exception from Copyright terms.
+	
+2002-09-18  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	Released 0.9.0
+	
+	* configure.in: Figure out version of Guile and check.  Do not
+	check for features that come with 1.6.0.  Bumped version of
+	gossip-sim to 0.9.0.
+	(AC_CANONICAL_HOST): Moved to beginning to avoid calling it twice.
+	
+	* doc/Makefile.am (CLEANFILES): New.
+	(uninstall-local): New, for removing html.index.
+	(EXTRA_DIST): Distribute fix-html and extract-index.
+
+	* doc/gossip-sim.texi: Various fixes.
+
+	* src/Makefile.am (INCLUDES): Added "-I." for the .x files in
+	VPATH builds.
+	(.x): Use '-o' option of guile-snarf to specify the output.
+	
+	* scm/sim-net.scm (inspect-on-error): New.
+	(make-net): Only inspect the net when 'inspect-on-error' is true.
+	* scm/sim.scm (set-inspect-on-error): New.
+	
+2002-09-02  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/generics.cc (sim_comp::get(char*)): Revert last change, do
+	use gh_ function.
+
+2002-09-02  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* src/dyncomp.cc, src/generics.cc (SCM_VECTOR_SET): Define when we
+	don't have it.
+	
+	* src/dyncomp.cc (sim_dyncomp_init): Use SCM_VECTOR_SET instead of
+	SCM_VELTS.
+
+	* scm/sim-schedule.scm (buffer-space): New.
+	(schedule): Use it to report buffer sizes before and after
+	optimizing.
+
+	* src/generics.cc (sim_comp::get(char*)): Use scm_symbol2str or
+	scm_string2str, as appropriate.  Do not use gh_ functions.
+
+	* gossip/sim.h, src/generics.cc (sim_comp::get): Added variant for
+	SCM values.
+
+2002-01-28  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim-schedule.scm (print<box>): Print both src and dst sizes
+	of a buffer.
+	(combine-scheduled-boxes): Only update an in or out buffer when it
+	has been associated with one of the just-combined boxes.
+	(unbox-sequence-box): New.
+	(optimize-schedule): Use it when dissolving a sequence box.
+	
+2002-01-16  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim.scm: Enable the debug option 'debug' at top.
+
+2001-12-05  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim-net.scm (sim-inspect): New.
+	(make-net): Call it when the net has errors.
+
+2001-11-04  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/comp.cc, src/dynblock.cc, src/dynblock.h, src/dyncomp.cc,
+	src/dyncomp.h, src/dynsim.cc, src/dynsim.h, src/generics.cc:
+	Replaced SCM_LIST1 with scm_list_1, and scm_bits_t with
+	scm_t_bits.
+
+2001-10-11  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* src/Makefile.am (XFILES): Added signal-pipe.x.
+
+	* doc/Makefile.am (texi->html rule): Pass --no-split to makeinfo.
+
+2001-06-30  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/Makefile.am (libguilegossip_la_SOURCES): Added signal-pipe.h
+	and signal-pipe.cc.
+
+	* src/init.cc (gossip_init): Call sim_init_signal_pipe.
+
+	* src/signal-pipe.cc, src/signal-pipe.h: New files.
+	
+	* scm/sim-builtin.scm (get-signal-outlet, add-signal-notify):
+	Export.
+
+2001-06-28  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-schedule.scm (time, find-schedule): Streamline report of
+	scheduling activities.
+
+2001-06-18  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim.scm (sim-repl): Use `resolve-interface' instead of
+	`resolve-module' when using the (gossip sim) module.
+
+2001-06-05  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/generics.cc (get_gval):  Use SCM_VELTS instead of
+	SCM_VECTOR_BASE.
+
+	* src/dynsim.cc (print_dynsim): Use SCM_UNPACK when printing the
+	address.
+
+	* src/dyncomp.cc (sim_dyncomp_init): Use SCM_VELTS instead of
+	SCM_VECTOR_BASE.
+
+	* scm/sim.scm: Use `re-export' instead of `export' where
+	appropriate.
+
+	* scm/sim-library.scm (find-library-file): New.
+
+	* scm/sim-doc.scm: New file.
+
+	* scm/Makefile.am (gossip_DATA): Added "sim-doc.scm".
+
+	* doc/Makefile.am: Add rule for generating index from html.
+	Install html docs and index for example lib.
+
+	* doc/extract-index: New file.
+
+2001-06-03  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-util.scm (define-struct): Put `define's before the
+	`export' to avoid accidentally exporting imported bindings.
+
+2001-05-26  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim-util.scm (peek): Output to current-error-port.
+
+	* doc/Makefile.am: Restructured to allow for
+	gossip-lib-example.texi to be build as well.
+
+	* doc/gossip-lib-example.texi: New.
+
+2001-05-22  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim-schedule.scm (compute-combine-params): Allow unconnected
+	boxes.  Always return param structure, unconnected boxes have null
+	midbufs and their tick counts are not computed.
+	(combine-boxes): Check for unconnected boxes by looking for null
+	midbufs in the params.
+	(combine-scheduled-boxes, optimize-schedule): New.
+	(schedule): Call optimize-schedule.
+
+2001-04-19  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* example/example-4.sim: Be verbose.
+
+2001-05-09  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynblock.cc, src/dyncblock.h, src/dyncomp.cc, src/dyncomp.h,
+	src/dynsim.cc, src/dynsim.h, src/generics.cc: General code
+	cleanup.  Use modern features of Guile instead of deprecated ones.
+	
+	* scm/sim.scm (block-lambda): Use `cons*' instead of `list*'.
+
+	* scm/sim-schedule.scm (true?): Use `identity' instead of `id'.
+
+2001-05-05  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/generics.cc, src/dyncomp.cc: Removed casts to `char*' in
+	calls to scm_num2long.
+
+	* src/generics.cc (sim_comp::set): Replaced scm_makdbl with
+	scm_make_complex.
+	
+2001-03-25  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-run.scm (list-derivative): New.
+	(sched->csched): For primitive boxes, take delays in input ports
+	into account to find the right checkpoints.  A checkpoint must be
+	taken when the pointer into the ring buffer can wrap around.
+
+2001-03-19  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim-schedule.scm (inflate-schedule!): Removed.
+	(alt2-combine, find-schedule): Renamed `alt2-combine' to
+	`find-schedule', thus making it the one and only scheduler.
+	(sort-boxes, combine-first-pair, total-penalty, combining-penalty,
+	combine-smallest-pair, combine-one-pair-round-robin, combine-all,
+	connect-broken-signals, alt-combine): Removed.
+	
+	* scm/sim.scm (set-scheduler, set-schedule-combiner,
+	set-schedule-inflation): Removed.
+
+	* src/dynsim.cc (enum stop_code, stop_code, stop_run,
+	simstop_return, stop_and_handle_by_message_noexit,
+	handle_by_message_noexit_and_return_false, notify, run_sched,
+	sigint_handler, sim_dynsim_run, sim_dynsim_stop): Redone
+	implementation of simulation stopping.  The simulation will now
+	stop as early as possible.  Scheme level `dynsim-stop' is gone,
+	return `#f' from the notify handler instead.
+
+	* scm/sim-run.scm (run-simulation): Do not call `dynsim-stop',
+	return `#f' instead.
+	* scm/sim-builtin.scm (dynsim-stop): Removed from exports.
+	
+2001-03-15  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* scm/sim.scm (encapsulated-load, sim-repl): Do not use
+	use-modules and define-module on top-level.
+
+	* scm/sim-net.scm, scm/sim-schedule.scm: Use new define-method
+	syntax.
+
+	* configure.in: Check for scm_num2ulong_long. 
+
+	* src/dynsim.cc: Explicitely include <stdio.h>.
+
+	* gossip/sim.h, src/generics.cc (sim_comp::get): Added getters for
+	unsigned int, long, unsigned long, long long, and unsigned long
+	long.
+
+	* scm/sim-builtin.scm: Pass a string to dynamic-call, not a
+	symbol.
+
+
+2000-11-22  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* example/cdma/awgn.cc (awgn::init): Multiply sigma2 by sqrt(0.5)
+	to get the power right for a complex base band signal.
+
+2000-09-18  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm (make-signal): Convert name from symbol to
+	string before passing it to string-append.
+
+2000-09-03  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim.scm (set-scheduler): New function.
+
+	* scm/sim-schedule.scm (net->boxes): Creates boxes with a tick
+	count of one and handle trivial loops directly and completely.
+	(combine-boxes): Return #f when the boxes can not be combined
+	instead of signalling an error.  Create new boxes with a tick
+	count of one.
+	(connect-broken-buffer): New.
+	(connect-broken-signals): Use it.
+	(list-front!): New.
+	(alt-combiner): New.
+	(find-schedule): New.
+	(schedule): Use it.
+	
+2000-09-10  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/generics.cc (sim_comp::get): Use "0.0" instead of "0" as
+	default for double generics to enable older GCCs to find the right
+	function.
+
+	* configure.in (GOSSIP_BLOCK_LDFLAGS): Ignore suffixes on
+	"linux-gnu" like "linux-gnulibc1".
+
+2000-09-05  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-net.scm (make-assocs): Construct a dummy signal for
+	terminated output ports.  This way, we always pass a real signal
+	to the instantiation procedure, which might use it for internal
+	connections.
+
+2000-08-24  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip/sim.h, src/generics.cc (sim_comp::get): Added generics
+	getter for `bool'.
+
+	* gossip/sim.h, src/comp.cc (sim_comp::step_not_redefined): New
+	function.  Use it in step functions instead of signalling error
+	directly.
+
+	* src/comp.cc, src/generics.cc, src/dynblock.cc: Improved error
+	messages.
+	
+2000-08-22  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-library.scm (make-library-module): Load all common.scm
+	files found in library directories, and reload them when they
+	change.  Use the-scm-module and (gossip sim) for the benefit of
+	common.scm.
+	(autoload, autoload-block, autoload-file): Do the bulk of the
+	autoload logic in `autoload' and use it to implement
+	`autoload-block' and the new `autoload-file'.
+	(autoload-block, autoload-in-progress?, autoload-in-progress!,
+	autoload-done!, call-with-autoloading, with-autoloading): Operate
+	on file names and not on lib/name.
+	
+2000-08-14  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* debian: New directory.
+
+	* scm/sim-schedule.scm (combined-buf-size): Removed.
+	(combining-penalty): New.
+	(combine-smallest-pair): Use it.
+
+2000-08-11  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-net.scm (print): Clean up handling of unconnected and
+	terminated signals.  Show undefined generics as "(default)".  The
+	`net' data structure needs to be worked over completely.
+
+	* scm/sim-schedule.scm (combine-all): Initialize name of topmost
+	sequence box.
+
+2000-08-10  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/generics.c, gossip/sim.h (sim_comp::get): Added functions
+	for int vectors.
+
+2000-08-07  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-net.scm (make-signal-head): Return `#f' for an input
+	signal of `#f'.
+
+2000-08-03  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	Released 0.8.2
+	
+	* configure.in: Bumped version number to 0.8.2
+
+2000-08-03  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+	
+	* scm/sim-schedule.scm (sequence-box): New "name" slot.
+	(box-name): Use it.
+	(combine-boxes): Set name slot of new sequence-box.
+	(combined-buf-size): New function.
+	(list*-non-null): Move to top-level.
+	(combine-one-pair, combine-first-pair): Renamed from
+	combine-one-pair to combine-first-pair.  Changed all callers.
+	(combine-smallest-pair): New function.
+	(make-combiner): Recognize "smallest" combiner specification and
+	return combine-smallest-pair for it.
+	
+2000-08-02  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-net.scm (net-finish): Print net here, if being verbose ...
+	* scm/sim.scm (sim-run-with-prefix): ... and not here.
+	
+2000-07-31  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-schedule.scm (sort-boxes): Only break signals that
+	actually form cycles.  Else we might get disconnect graphs that we
+	are trying to reconnect later, but they have received an
+	independent schedule, so the rates don't necessarily match.
+
+2000-07-27  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-net.scm (comp): Added `box' slot.
+	(print): Deal better with open ports.
+	* scm/sim-schedule.scm (net->boxes): Set `box' slot of component.
+	* scm/sim-run.scm (connect-dyncomps): Make buffers large enough
+	for open ports by looking at the tick count of the corresponding
+	box.
+
+2000-07-25  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* configure.in: Check for scm_simple_format in libguile.
+	* src/dyncomp.cc, src/dynsim.cc, src/generics.cc: Use `~' or `%'
+	in format strings, depending on whether scm_simple_format has been
+	found.
+
+2000-07-22  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynblock.cc, src/dyncomp.cc, src/dynsim.cc: Adapted smob
+	creation to new method.
+
+2000-07-17  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/comp.cc (sim_comp::set_block_info): Correctly initialize
+	block->name from info->name, not from sim_comp::name.
+
+	* src/comp.cc (sim_comp::step, sim_complex_comp::step,
+	sim_complex_int_comp::step, sim_int_complex_comp::step): Include
+	block name in error message.
+	
+2000-07-13  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/comp.cc (sim_comp::set_out_chunk): Correct off-by-one error
+	when detecting whether the chunk of the multi port is being set.
+
+2000-06-29  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip/sim.h, src/generics.cc (sim_comp::get): Added getters for
+	double arrays.
+
+	* src/comp.cc (set_n_in): Bug fix: use in_connects[j] instead if
+	in_connects[i] in second loop.
+
+2000-06-28  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/dynsim.cc (run_sched): Always execute a complete schedule,
+	that is, do not return immediatly when STOP_RUN becomes true after
+	a call to NOTIFY.  Check for sigints only after complete schedule.
+	
+2000-06-26  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/comp.cc (sim_comp::set_n_in, sim_comp::set_n_out): Correctly
+	handle connection of zero signals to multiport when multiport is
+	the only port.
+	
+	* gossip/sim.h, src/generics.cc (sim_comp::get): Added getters for
+	strings.
+
+2000-05-29  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	Redone implemementation of terminated output ports.  Added support
+	for terminated input ports.
+	
+	* scm/sim-net.scm: (connect-signals): Deal with output and input
+	termination of signals.
+	(net-add): Don't typecheck terminators.
+	(make-assocs): Don't map over signals of output port, use
+	for-each.  Tolerate `#f' as input signal.
+	(net-finish): Deal with terminating signals.
+
+	* scm/sim-run.scm (connect-dyncomps): Deal with terminated input
+	ports.
+
+	* scm/sim-schedule.scm (net->boxes): Tolerate terminated input
+	ports by ignoring them.
+
+	* src/comp.cc (sim_comp::make_reader): Deal with open input ports.
+	* src/dyncomp.cc (sim_dyncomp_connect): Likewise.
+
+2000-05-24  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-options.scm (default-library-path): Get prefices from
+	GOSSIP_PREFIX and GOSSIP_EXEC_PREFIX when they are set.
+
+2000-05-22  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	Released 0.8.1
+
+2000-05-15  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip/sim.h, src/comp.cc (sim_comp::error, sim_comp::verror):
+	New.
+
+2000-05-12  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/generics.cc (sim_comp::get(scm_complex *)): Register new
+	vector for deletion.
+
+	* gossip/sim.h (sim_comp::deleteme, sim_comp::deletabables,
+	sim_comp::register_for_delete): New declarations.
+	
+	* src/comp.cc (sim_comp::sim_comp): Initialize deletables.
+	(sim_comp::~sim_comp): Delete all deletables.
+        (sim_comp::register_for_delete): New function.
+	
+	* scm/sim-schedule.scm (combine-one-pair): After moving an
+	unconnected box, try again only when there are still at least two
+	packs.
+
+2000-05-11  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm (canonicalize-signal): Correctly handle empty
+	lists.
+
+	* scm/sim.scm (result): Allow symbols, keywords and strings as the
+	name of the result and coerce them into a symbol.
+	(results): Coerce keyword into symbol when using it as name for
+	result.
+
+2000-05-11  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-net.scm (print, net-add): Handle `#f' as a signal on
+	output ports, meaning "open connection".
+
+	* scm/sim-run.scm (connect-dyncomps): Supply minimal buffer for
+	open outputs.
+
+	* scm/sim.scm (sig): Construct a new signal when given no
+	arguments.
+	(let-signals): New macro.
+
+2000-05-08  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-library.scm (load-block): New function, export it.
+	(autoload-block): Use load-block to do the dirty work.
+	(make-library-module): Do not refresh blocks that are currently
+	being autoloaded.
+
+	* scm/sim-net.scm (canonicalize-signal): New function.
+	(connect-signals, make-assocs): Use it to cope with arbitrary
+	bundlings of signals.
+	(connect-signal-head): New function.
+	(net-add): Use it to correctly handle directly connected signals.
+	
+2000-05-02  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* example/destination.cc (destination::step): Prefix output with
+	name of component.
+
+	* scm/sim-net.scm: Reallow default values for generics in formal
+	objects.
+	(connect-signals): New function.  Adapted rest to cope with
+	forwarded signals.
+	(merge-signals): Removed.
+
+	* scm/sim.scm (find-comp-1): Bug fix: really loop over all comps.
+	(merge-signals, connect-signals): Export connect-signals instead
+	of merge-signals.
+	
+2000-04-28  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/comp.cc (sim_comp::step, sim_complex_comp::step,
+	sim_complex_int_comp::step, sim_int_complex_comp::step,
+	sim_int_comp::step): Do not call abort, throw a Scheme error
+	instead.
+
+2000-04-28  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip/sim.h, src/generics.cc, src/prototype.cc,
+	scm/sim-net.scm: Redone generics and results.  They no longer
+	carry a type or default value, just a name.  Changed all affected
+	code.  See NEWS for details on new scheme.
+	(sim_comp::get): Removed FLAGS argument.  Added argument for a
+	default.
+
+2000-04-27  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip/sim.h (sim_comp::get_name): Provide inline definition.
+	(SIM_COMPLEX_VECTOR_GENERIC): New macro.
+	(sim_comp::get): New for complex vectors.
+	* src/generics.cc (sim_comp::get): New for complex vectors.
+
+	* scm/sim-net.scm (signal-forward, signal-follow-forward,
+	merge-signals): New functionality for merging signals.
+	(make-signal-head, make-assocs, net-finish): Honor signal
+	forwards.
+	
+	* gossip/sim.h (sim_comp::get_n_in, sim_comp::get_n_out): Provide
+	inline definitions.
+
+	* scm/sim.scm (merge-signals): Export.
+
+2000-04-18  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* configure.in: Check for `format' and `define-class' in the
+	relevant Guile modules and abort configuration when they are not
+	found.  This should prevent people from having problems later.
+
+2000-04-14  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* doc/Makefile.am (gossip-sim.html): Run HTML thru `fix-html'.
+	* doc/fix-html: New file.
+
+2000-04-13  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-library.scm (export): Export find-library instead of
+	make-library-module.
+
+	* Makefile.am (EXTRA_DIST): Added gossip-run.
+
+2000-04-08  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-options.scm (default-library-path): Correctly filter
+	environment value thru split-colon-path before using.
+
+	* scm/sim-library.scm (make-library-module, library-exports):
+	Export.
+
+2000-03-30  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* gossip-run, gossip-run.in: Renamed gossip-run.in to gossip-run.
+	Do not set %load-path.
+	* Makefile.am: Removed generation of gossip-run from
+	gossip-run.in.  The script gossip-run will no longer set the
+	correct load path itself, you will have to do that externally.
+	See NEWS for a brief discussion.
+	
+2000-03-28  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	Released 0.8.0
+	
+	* src/Makefile.am (EXTRA_DIST): Distribute *.x files. 
+
+	* doc/Makefile.am (gossip-sim.html): New target.  Added support
+	for creating PNG images.  Moved picture files from "pics"
+	directory to here.
+
+	* configure.in: Direct output to config.log while checking whether
+	guile-readline works.
+
+2000-03-26  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim.scm (make-block): Expect shortformals in the interface
+	list.
+	(block-lambda): Do not convert shortformals to preformals when
+	calling make-block.
+
+	* scm/sim.scm (find-comp-1, find-comp): Search only the current
+	component.
+	* scm/sim-net.scm (comp-finished?): Make component current while
+	calling the predicate.
+
+	* src/dynsim.h (SCM_SETDYNSIM): Cast VAL to SCM.
+	* src/dyncomp.h (SCM_SETDYNCOMP): Cast VAL to SCM.
+	* src/dynblock.h (SCM_SETDYNBLOCK): Cast VAL to SCM.
+
+	* Makefile.am (gossip-run): Removed GUILE_GOSSIP substitution.  It
+	was long unused.
+
+2000-03-25  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm (make-signal-head): Handle lists by mapping over
+	them.
+
+2000-03-24  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* configure.in: Figure out how to link block programs by checking
+	the host_os.  Record findings in GOSSIP_BLOCK_LDFLAGS.
+	* test/Makefile.am, example/Makefile.am, example/cdma/Makefile.am
+	(LDFLAGS): Use it.
+	* scm/sim-config.scm.in (sim-block-ldflags): New variable to
+	capture above findings.
+	
+2000-03-22  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* test/Makefile.am (EXTRA_DIST): Distribute hier-1 and hier-2.
+	(INCLUDES): Add $(GUILE_CFLAGS). 
+	
+	* example/Makefile.am (INCLUDES): Add $(GUILE_CFLAGS). 
+
+	* example/cdma/power-control.cc: New file.
+	* example/cdma/Makefile.am: Add power-control to list of blocks.
+	(INCLUDES): Add $(GUILE_CFLAGS).
+	
+	* doc/Makefile.am: Make sure that figures are made and distributed
+	correctly.
+
+	* configure.in (AC_INIT): Use scm/sim.scm as canonical source
+	file.
+
+2000-03-20  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim.scm: Export sim-repl.
+	(sim-repl): Switch modules before loading simrc.
+
+2000-03-15  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynblock.cc: Invoke new check functions.
+
+	* src/dyncomp.cc (sim_dyncomp_in_type_size,
+	sim_dyncomp_out_type_size): New.
+
+	* scm/sim.scm: Tidy list of export names.
+
+	* scm/sim-schedule.scm (buf-src-chunk, buf-dst-chunk): Renamed to
+	buf-src-size and buf-dst-size, resp.  Changed callers.
+	Improved printed information.
+	
+	* scm/sim-net.scm (assoc-src-chunk, assoc-dst-chunk): Renamed to
+	assoc-src-size and assoc-dst-size, resp.  Changed callers.
+	(assoc-src-type-size, assoc-dst-type-size): New.
+
+	* scm/sim-builtin.scm: Updated list of exported builtins.
+
+	* gossip/sim.h, src/comp.cc, src/prototype.cc: Redone sim_port
+	struct and corresponding macros to include type size and separate
+	`multi' flag.  Redone chunk setting functions.  Added functions
+	for checking correctnes of derived blocks.
+	
+	* example/cdma/Makefile.am: Added `real' versions of CDMA blocks.
+
+	* example/example-4.sim: Use `:delay' instead of `:chunk-delay'.
+	Take count from script arguments.
+
+2000-03-10  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/generics.cc (sim_comp::get(sim_complex&)): Use scm_real_part
+	to get the real part of a number, scm_num2dbl is not enough.
+
+	* src/dynlink.cc (dyn_link): Check for absolutenes of filename.
+	Return NULL when dlopen returns NULL.
+
+	* scm/sim-schedule.scm (combine-one-pair): Recognize and deal with
+	the (quite possible) situation where box1 is not connected to any
+	box in pack2.
+
+	* scm/sim-library.scm (find-library-dirs): Recognize special name
+	"work".
+
+	* example/Makefile.am (SUBDIRS): Added cdma.
+	* example/cdma: New directory with a bigger example.
+
+	* configure.in (AC_OUTPUT): Remove libgossipsim/Makefile.  Add
+	example/cdma/Makefile.
+
+2000-03-07  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/Makefile.am: Added dynlink.cc and dynlink.h.
+	* src/dynlink.cc, src/dynlink.h: New files.
+	* src/dynblock.cc, src/dynblock.h, src/dyncomp.cc, src/dyncomp.h:
+	Use them to do dynamic linking.
+
+	* scm/sim-library.scm: Copy bindings into import modules and
+	reload blocks when they change.
+
+2000-03-06  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynsim.cc: Use scm_internal_catch instead of
+	scm_internal_cwdr to call notify procedure.  Call notify procedure
+	before setting SIGINT handler.
+
+	* scm/sim-net.scm, scm/sim-run.scm, scm/sim-schedule.scm,
+	scm/sim.scm: Replace signals-view with the new signal-head.
+	Updated all uses.
+
+	* gossip-run.in: Move most code to scm/sim.scm.
+	* scm/sim.scm: Move guts of gossip-run here.  Provide Gossip
+	specific repl.
+	
+	* example/Makefile.am: Added "adder.prim".
+        * example/adder.cc: New file.
+	* example/example-4.sim: Use it to produce Fibonacci numbers.
+
+2000-03-04  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-schedule.scm: More work towards buffer reconnection.
+
+2000-03-03  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-schedule.scm. scm/sim-net.scm: Allow specification of
+	per assoc, per signal delay.
+
+	* gossip/sim.h, src/comp.cc (make_writer, make_reader): Moved
+	delay specification to reader.
+
+	* scm/sim.scm (sig): Export view-signal as sig. 
+
+	* scm/sim-run.scm, src/dyncomp.cc: Adapted to changes.
+
+2000-03-03  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-schedule.scm (box-name): Return comp-name instead of
+	block-name.
+	(sort-boxes): Try to break cycles by breaking delayed signals.
+	(combine-all): Correctly return sequence box when combining
+	remaining unrelated boxes.
+	(connect-broken-signals): New function.
+	(schedule): Call it.
+	* scm/sim-net.scm (signal): Add `broken' slot.
+
+2000-03-01  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm (signal): Added slots for delay of signal.
+	(make-signal): Added keyword arguments.
+	(make-bus-signal): Removed, make-signal now makes buses.  
+	* scm/sim.scm (signals): Pass args to make-signal.  Do not use
+	make-bus-signal.
+	
+	* goosip/sim.h (sim_block, sim_comp): Renamed sim_block to
+	sim_comp.  Changed all uses.
+
+	* gossip/sim.h (sim_block::set_in_data_size,
+	sim_block::set_in_chunk_bytes, sim_block::set_in_chunk): Renamed
+	and rearranged functions for setting chunk sizes.  Derived blocks
+	are supposed to overwrite set_in_chunk to account for their type
+	size and then use set_in_chunk_bytes to set the size in terms of
+	bytes.
+	(sim_block::set_out_data_size, sim_block::set_out_chunk_bytes,
+	sim_block::set_out_chunk): Likewise for the output ports.
+
+	* gossip/sim.h, src/comp.cc (sim_block): New struct.
+	(sim_comp): Cleaned up by moving some data members to a sim_block
+	struct.  Adapted all relevant code.
+	(sim_comp::connection::make_writer): Take bufsize instead of
+	count.  Added delay parameter.
+
+	* src/dyncomp.cc (sim_dyncomp_connect): Expect delay parameter for
+	outputs and pass to make_writer.
+
+	* scm/sim-run.scm (connect-dyncomps): Pass bufsize and delay to
+	dyncomp-connect. Account for delay in bufsize.
+	
+2000-02-06  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm: Added `net-properties'.  Use them for the
+	default-error-prefix.
+	* scm/sim-schedule.scm: Listen to the `combiner' and `inflation'
+	net properties.
+	* scm/sim.scm (set-schedule-combiner, set-schedule-inflation): New
+	user level functions.
+
+2000-01-30  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim.scm (sim-run-with-prefix): New.
+	* gossip-run.in (run): Use it, passing the filename as error
+	prefix.
+
+	* scm/sim-net.scm, scm/sim-util.scm: Better error messages via the
+	new sim-error.
+
+	* scm/sim-library.scm: Remove debugging messages.
+
+	* gossip-run.in (run): Do not print success/failure message.
+	There is no way to get that information at this place.
+	(gossip-run): Do not use `with-error-catching', it is not needed
+	any longer.
+	
+2000-01-29  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm, scm/sim-schedule.scm, scm/sim-run.scm:
+	Simplified signal structures and added support for multiple
+	readers.
+	
+	* test/fork.cc: New file for testing how much faster multiple
+	readers are compared to explicit forking.
+	* test/Makefile.am (test_PROGRAMS): Added fork.prim.
+	(fork_prim_SOURCES): New.
+
+	* gossip/sim.h (sim_block): Added n_in_declared and
+	n_out_declared.
+	* src/comp.cc (sim_block::sim_block): Initialize them.
+	(sim_block::set_n_in, sim_block::set_n_out): Set them to their
+	final value.
+	(sim_block::set_in_data_size, sim_block::set_out_data_size): Use
+	them to set all connects that belong to a multiport to one size.
+	
+2000-01-24  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	Making the C side ready for one-driver/multiple-reader signals.
+	
+	* gossip/sim.h, src/comp.cc: Removed all traces of flush_step
+	routines.  They are not used for anything.  Removed sim_signal.
+	It's function is now done via the connection structure.
+	* src/signal.cc: Removed.
+	* src/Makefile.am (libguilegossip_la_SOURCES): Removed signal.cc.
+
+	* src/dynblock.cc (sim_dynblock_init): Renamed to
+	sim_dynblock_instantiate.  Do no longer initialize dyncomp.
+	* src/dyncomp.cc (sim_dyncomp_init, sim_dyncomp_connect): New
+	functions.  
+	(sim_make_and_init_dyncomp): Simplified to sim_make_dyncomp.
+	* src/dynsim.cc (sim_make_dynsim): Removed `structure' parameter.
+	The structure is now build by sim_dyncomp_connect.
+	
+	* scm/sim-builtin.scm: Updated for new set of builtin functions.
+
+	* scm/sim-net.scm (block-instantiate for primitive-comp): Use
+	dynblock-instantiate and dyncomp-init instead of dynblock-init.
+	
+	* scm/sim-run.scm (net->cstruct): Removed.
+	(connect-dyncomps): New.
+	(run-simulation): Use it.
+
+	* scm/sim.scm (define-signals): Renamed to `signals'.
+	(set-exit-expression): Renamed to `exit-expression'.
+	(epilog): New macro.
+	(set-result): Removed.
+	(results): New.
+	Updated all users.
+
+	* gossip/sim.h, src/generics.cc: Get generics and results via
+	names, not via indices.  Updated all users.
+	
+2000-01-19  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dyncomp.cc (mark_dyncomp): Do not check whether mark bit is
+	already set before marking our references.  Do not set our mark
+	bit.
+
+2000-01-17  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-schedule.scm (schedule): Buffer size is now in bytes,
+	print it accordingly.
+
+	* scm/sim-run.scm (run-simulation): Run epilogs after simulation
+	has finished.
+
+	* scm/sim.scm, scm/sim-net.scm: Added support for hierachical
+	epilogs and results.
+
+	* scm/sim-builtin.scm (dyncomp-result): Export.
+
+	* gossip/sim.h, src/comp.cc, src/dyncomp.cc, src/dyncomp.h,
+	src/generics.cc: Added support for `results' in addition to
+	`generics'.  Made sim_data by unsigned char.
+
+	* test/dest.cc: Added "rate" sim_result.
+	* test/source.cc, test/thru.cc: Pass NULL results to
+	SIM_DECLARE_BLOCK.
+
+	* example/destination.cc, example/source.cc: Pass NULL results to
+	SIM_DECLARE_BLOCK.
+
+2000-01-16  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* gossip-run.in: Define relevant code in its own `gossip-run'
+	module to avoid strange interactions with the way Guile starts
+	scripts.  It wouldn't use the right `format' else.  Export `main'
+	procedure in a strange way.
+
+	* Great renaming of sim_comp and derived structures.
+	
+	* scm/sim-net.scm (compute-signal-src-chunk,
+	compute-signal-dst-chunk): Expect a single number, not a cons of two.
+	* src/dyncomp.cc (sim_dyncomp_in_size, sim_dyncomp_out_size):
+	Return a single number, not a cons of two numbers where the second
+	one is useless.
+
+	* gossip/sim.h, src/comp.cc, src/signal.cc: Removed all traces of
+	`sim_bits', replacing them with `sim_int'.  Make sim_signal::read
+	and sim_signal::get_space inline functions.
+	* src/dyncomp.cc (sim_dyncomp_in_size, sim_dyncomp_out_size):
+	Return 32 as bit width, for now.
+
+	* gossip/sim.h, src/comp.cc, src/signal.cc: Removed all traces of
+	`flags'.
+
+	* src/dynsim.cc (run_sched): Fix bug from incorrect manual merge:
+	do not print `finished' message here.
+
+	* src/Makefile.am (libguilegossip_la_LDFLAGS): Added
+	-export-dynamic.
+
+	* src/dynsim.cc (run_sched): Pass count to `tick' instead of
+	looping ourselves.
+
+	* scm/sim-schedule.scm (inflate-schedule!): New function.
+
+	* gossip/sim.h, src/comp.cc, src/signal.cc: Introduced step
+	functions with explicit count.
+
+2000-01-04  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/dynsim.cc (sim_dynsim_run): Evaluate finished predicate once
+	before starting the simulation to catch components that don't want
+	to run at all.
+	(run_sched): Do not set finished flag when finished trigger has
+	been detected.  Do not print message.  
+	* src/comp.cc (sim_comp::finish): Set finished flag and print
+	message here.
+
+	* scm/sim-run.scm: Doc fix. 
+
+2000-01-04  Martin Schauder  <donmartin@dt.e-technik.uni-dortmund.de>
+
+	* example/destination.cc (destination::step, destionation::init):
+	Correctly raise finished flag.
+
+1999-12-30  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim.scm (block-lambda): New macro.
+	(define-block): Use it.
+
+1999-12-21  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim-library.scm (make-library-interface-module): New
+	function.
+	(process-use-library): Use it.
+	
+1999-12-28  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* gossip/sim.h: Support for generic types.
+
+	* src/prototype.cc: Include type of generics in prototype.
+
+	* src/generics.cc: Do not use SIM_DEF, use sim_generic::defp
+	instead.  Support more generic types.
+
+	* scm/sim-net.scm: Support types for generics.  Fix default values
+	for generics of hierarchical blocks.  Default exit condition for a
+	hierarchical block and for nets is to stop as soon as the first
+	child is finished.
+
+	* scm/sim.scm: Fix default values for generics of hierarchical
+	blocks.
+
+	* test/dest.cc, test/source.cc, test/thru.cc: Use correct types of
+	generics.  Use new support for defaulted generics.
+
+	* doc/texinfo.tex: Do not use braces around filename for
+	\pdfimage.
+
+	* doc/pics/example-1.fig, doc/pics/example-1.txt,
+	doc/pics/example-2.fig, doc/pics/example-2.txt: New.
+
+	* doc/Makefile.am: Added rules for PDF format.
+
+	* Makefile.am (SUBDIRS): Added `example' directory.
+	* configure.in (AC_OUTPUT): Added `example/Makefile'.
+	
+	* example, example/Makefile.am, example/source.cc,
+	example/destination.cc, example/example-1.sim,
+	example/example-2.sim, example/example-3.sim: New.
+	
+1999-12-27  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynblock.h, src/dynblock.cc (sim_dynblock_init): Added name
+	of component as parameter.
+	* src/dyncomp.h, src/dyncomp.cc (sim_make_and_init_dyncomp): Likewise.
+	* scm/sim-net.scm (block-instantiate): Pass name of primitive
+	component to dynblock-init.
+	
+	Cleanup of C++ side of things.  Many things have changed.
+	
+	* src/prototype.cc: New file.
+	* src/sim.cc: Merged into comp.cc and prototype.cc.
+	* src/Makefile.am: Removed sim.cc, added prototype.cc
+
+	* src/dyncomp.cc, src/dyncomp.h, src/dynblock.cc, src/dyncomp.h,
+	src/dynsim.cc, src/dynsim.h: Use gossip/sim.h instead if
+	gossip/sum.h
+	
+	* gossip/Makefile.am (gossip_HEADERS): sum.h removed. 
+	* gossip/sum.h: Merged into gossip/sim.h.
+	
+	* gossip/sim.h, src/comp.cc, src/signal.cc, src/generics.cc:
+	Restructured and rewritten.
+
+	* test/dest.cc, test/source.cc, test/thru.cc: Adapted to new world
+	order.
+
+1999-12-23  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-options.scm (set-block-path, add-block-path,
+	block-path): Removed.
+	(default-library-path): New.
+
+	* scm/sim-library.scm: Use (gossip sim-options) instead of (gossip
+	sim-config).  Doc fixes.
+
+	* doc/texinfo.tex: New version from texinfo-4.0.
+
+1999-12-21  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* test/Makefile.am: Do not link with libgossipsim, which is gone.
+
+	* src/Makefile.am (libguilegossip_la_SOURCES): Added sim.cc and
+	generics.cc.
+
+	* scm/sim.scm: Use (gossip sim-options).
+
+	* scm/sim-run.scm, scm/sim-schedule.scm: Use (gossip sim-options)
+	instead of (gossip sim-config).
+
+	* scm/sim-net.scm, src/comp.cc, src/dynblock.cc, src/dynblock.h,
+	src/dyncomp.cc, src/dyncomp.h: Generics done differently.
+
+	* test/dest.cc, test/source.cc, test/thru.cc: Generics done
+	differently.
+
+	* scm/sim-library.scm: Imports done differently.  Use
+	eq?-hashtables throughout.
+	(private, use-private): Do not export.
+
+	* scm/sim-config.scm.in: Only define and export sim-prefix,
+	sim-exec-prefix, and sim-version, rest is done in sim-options.scm.
+
+	* scm/Makefile.am (gossip_DATA): Added sim-options.scm.
+
+	* scm/sim-options.scm: New file.
+
+	* libgossipsim/sim.cc: Moved into src directory.
+
+	* gossip/sum.h (sum_comp): Added set_gvals, get_gval and get
+	member functions to deal with SCM values as generics.
+
+	* gossip/sim.h (sim_generic): Removed `type' field and changed
+	`def' field to boolean.  This is not the last word on how to
+	declare generics.
+	(sim_comp::init): Changed to take `void' array as generic values.
+	Changed return type to `void'.  Changed all definitions and
+	callers.
+	
+	* gossip-run.in, scm/sim.scm (make-my-module, encapsulated-load):
+	Moved from gossip-run.in to scm/sim.scm.
+
+	* configure.in (DEFAULT_BLOCKPATH): Removed.
+
+	* Makefile.am (SUBDIRS): Removed libgossipsim.
+
+1999-12-15  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-net.scm (instantiable-class, initialize): Make the
+	:procedure option inherit via instantiable-class and its method
+	for `initialize'.
+	(instantiatable, instantiable): Renamed everywhere.
+
+1999-12-17  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* test/Makefile.am: Tack ".prim" suffix onto block programs.
+	Install hier-1.block and hier-2.block.
+	* test/hier-1.block, test-hier-2.block: New.
+	
+	* scm/sim.scm (the-blockpath, blockpath, set-blockpath,
+	add-blockpath, search-blockpath, open-library, use-library,
+	load-block, use-blocks): Removed.  Improved functionality is now
+	provided by sim-library.scm.
+	(define-block): Bug fix with keyword traversal.
+	
+	* scm/sim-config.scm.in (default-library-path): New.
+
+	* scm/sim-library.scm: New file.
+	* scm/Makefile.am (gossip_DATA): Added sim-library.scm
+
+1999-12-02  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* scm/sim-schedule.scm (combine-one-pair): Look for a suitable
+	box2 that is really connected to box1.  Put new sbox into its own
+	pack between pack1 and pack2.
+	(combine-one-pair-round-robin): Removed.
+	(combine-one-pair-simple): Renamed to combine-one-pair.
+
+1999-12-01  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim.scm (sim-run): Honor the verbose option.
+	* scm/sim-schedule.scm (schedule): Likewise.
+	* scm/sim-run.scm (run-simulation): Likewise.
+
+1999-11-30  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* scm/sim.scm (define-signals): Now able to make bus signals.
+	(find-comp): Search the whole current net.
+	(finished?): Allow strings as components and search for them.
+	(set-exit-expression): Just pass strings to `finished?'.
+
+	* scm/sim-run.scm (run-simulation): Make net current when cheking
+	for `finished' status.
+
+	* scm/sim-net.scm (comp-finished?): Do not make the component
+	current any longer.
+	(make-bus-signal): New function.
+	(net-add): Only finish signals for the current component, it is
+	too early to finish its parents.  They will be finished later
+	anyway.
+
+1999-11-30  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/init.cc: New file.
+
+	* src/dyncomp.cc (sim_init_dyncomp): No longer extern "C".
+
+	* src/dynsim.cc (sim_init_dynsim): No longer extern "C".
+
+	* src/dynblock.cc (scm_dynblock_pclose): Removed dead code.
+	(sim_init_dynblock): No longer extern "C".
+	
+	* src/Makefile.am (libguilegossip_la_SOURCES): Added init.cc.
+
+	* scm/sim.scm: Implemented support for defining hierachical blocks
+	and named components in exit expressions.
+
+	* scm/sim-net.scm: Implemented hierachical blocks.
+
+	* scm/sim-builtin.scm: New file.
+
+	* scm/Makefile.am (gossip_DATA): Added sim-builtin.scm.
+
+	* gossip-run.in: Call guile instead of guile-gossip.  Use sh
+	trampoline to avoid hard coding the path to guile.
+
+1999-11-29  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/Makefile.am: Turned code into a shared library. 
+
+1999-11-23  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* test/thru.cc: Make input port a multi-port. 
+
+	* src/dynsim.cc: Use dynsim::dyncomps to protect the dyncomps from
+	the GC.  Do not free then when freeing the dynsim.
+
+	* src/comp.cc (sum_comp::~sum_comp): Delete `in' signals and
+	signal vectors as well.
+
+	* scm/sim.scm: Cosmetic fixes.
+
+	* scm/sim-schedule.scm: Cosmetic fixes.
+
+	* scm/sim-net.scm: Added :no-backtrace option to module.
+	(net-add): Give names in signal error messages.
+
+	* scm/sim-run.scm: Added :no-backtrace option to module.
+	(net->cstruct): Handle multi-ports right.
+	(flatten-csched): Correctly flatten all sub-schedules.
+	(run-simulation): Cosmetic fixes.
+	
+1999-11-14  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynsim.cc (scm_make_dynsim): Do not consume dyncomps.
+
+	* gossip-run.in (encapsulated-load): Use "use-modules" instead of
+	"module-use!" to correctly get at the interface of the used
+	module.
+
+	Complete rewrite of Scheme implementation.
+	
+	* scm/sim-blocks.scm, scm/sim-elab.scm, scm/sim-utils.scm: Removed
+	entirely.
+	* scm/sim-net.scm, scm/sim-run.scm, scm/sim-util.scm: New files.
+	* scm/sim-schedule.scm: Completely rewritten.
+	* scm/sim.scm: Adapted.
+	* scm/Makefile.am: Adapted to new file names.
+
+1999-11-06  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* src/signal.cc (sum_signal::bufspace): Correctly compute
+	buffersize.
+
+	* src/dynsim.cc (): Cleanup code somewhat, no functional changes. 
+
+	* scm/sim-schedule.scm: Invoke GC before running simulation.
+
+	* Makefile.am (CLEANFILES, CLEAN_FILES): Fix spelling bug.
+
+1999-11-02  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynsim.cc (??): Compute buffer size more precisely.
+
+	* scm/sim.scm (library, use-library): Renamed library to
+	use-library.
+	(use-blocks): Allow library specifications.
+	
+1999-11-01  Marius Vollmer  <mvo@zagadka.ping.de>
+
+	* src/dynsim.cc (notify): Cast away `const' from string literal to
+	humor the C++ compiler.
+
+1998-12-29  Marius Vollmer  <mvo@dt.e-technik.uni-dortmund.de>
+
+	* Started ChangeLog.
+
+

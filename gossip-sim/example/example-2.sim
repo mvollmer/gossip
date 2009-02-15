@@ -1,0 +1,13 @@
+;; -*- scheme -*-
+
+(use-library example *)
+
+(define-block (two-source (> out1) (> out2))
+  (source :out out1 :value 1)
+  (source :out out2 :value 2))
+
+(signals a b)
+
+(two-source :out1 a :out2 b)
+(destination :in (list a b))
+

@@ -1,0 +1,6 @@
+;; -*- scheme -*-
+
+(define-block (hier-1 (= n 1) (= block) (<< in) (> out) )
+  (if (= n 1)
+      (block :in in :out out)
+      (hier-2 :n (1- n) :block block :in in :out out)))

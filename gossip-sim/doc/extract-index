@@ -1,0 +1,38 @@
+#! /bin/sh
+exec guile -s $0 "$@"           # -*- scheme -*-
+!#
+
+(use-modules (ice-9 rdelim))
+(use-modules (ice-9 regex))
+(use-modules (ice-9 pretty-print))
+
+(define filename (cadr (program-arguments)))
+(define prefix (caddr (program-arguments)))
+
+(define index-regexp 
+  (make-regexp "<li>(<code>)?([^<]*)(</code>)?: <a href=\"([^\"]*)\".*"))
+
+(define index-head-regexp 
+  (make-regexp "<h.>Block Index</h.>"))
+
+(with-input-from-file filename
+  (lambda ()
+    (let loop ((line (read-line))
+	       (state 'body)
+	       (index (acons #t filename '())))
+      (cond ((eof-object? line)
+	     (if (not (eq? state 'index))
+		 (error "No `Block Index' found"))
+	     (pretty-print (reverse! index)))
+	    ((and (eq? state 'body)
+		  (regexp-exec index-head-regexp line))
+	     (loop (read-line) 'index index))
+	    ((and (eq? state 'index)
+		  (regexp-exec index-regexp line))
+	     => (lambda (matches)
+		  (let ((block (string->symbol (match:substring matches 2)))
+			(url (string-append prefix
+					    (match:substring matches 4))))
+		    (loop (read-line) state (acons block url index)))))
+	    (else
+	     (loop (read-line) state index))))))

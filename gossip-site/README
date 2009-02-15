@@ -1,0 +1,2 @@
+This module contains files hat pertain to the GOSSIP web site.
+You can copy them to the server by running "make update".

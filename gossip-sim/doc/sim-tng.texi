@@ -1,0 +1,1735 @@
+\input isolatin1.tex
+\input texinfo.tex   @c -*- texinfo -*-
+@c %**start of header
+@setfilename sim-tng.info
+@settitle @sc{sim} -- The next Generation
+@iftex
+@afourpaper
+@end iftex
+@syncodeindex fn cp
+@syncodeindex vr cp
+@syncodeindex tp cp
+@c %**end of header
+
+@c use C-x h C-u C-c C-u m to update everything
+
+@ifinfo
+@node Top, Überblick für Wechsler, (dir), (dir)
+@top Sim -- The next Generation
+
+ACHTUNG: Damit Info Dateien, die Umlaute enthalten, richtig
+funktionieren, solltest du in deinem @file{.emacs} die Zeile
+
+@example
+(require 'iso-syntax)
+@end example
+
+(oder irgendwas vergleichbares) haben.
+
+@menu
+* Überblick für Wechsler::      
+* Einleitung::                  
+* Simulationsmodell::           
+* Scheme im Gröbsten::          
+* Simulationskontrolle::        
+* Blöcke erstellen mit libsim::  
+* Implementation::              
+* Index::                       
+
+ --- The Detailed Node Listing ---
+
+Das Simulationsmodell
+
+* Blöcke::                      
+* Ports::                       
+* Generics::                    
+* Einschränkungen::             
+
+Scheme im Gröbsten
+
+* Das Wichtigste::              
+
+Simulationskontrolle
+
+* Beispiel::                    
+* Konvertieren::                
+* Laufenlassen::                
+* Kommandozeilen-Argumente::    
+* Schemeschimmer::              
+* Mehrere Simulationsdurchläufe::  
+* Hierarchie::                  
+
+Blöcke erstellen mit libsim
+
+* Blöcke linken::               
+* Beispielblock::               
+* Datentypen::                  
+* Beschreibung der Blockschnittstelle::  
+* Initialisierung::             
+* Simulationsschritte::         
+* Programmende::                
+* Markierte Daten::             
+* Multi-Ports::                 
+
+Implementation
+
+* Begriffe::                    
+@end menu
+
+@end ifinfo
+
+@titlepage
+@title Sim -- The next Generation
+@author Marius Vollmer
+
+@page
+@vskip 0pt plus 1filll
+Copyright @copyright{} 1996 Universität Dortmund, Germany.
+
+Permission is granted to make and distribute verbatim copies of
+this manual provided the copyright notice and this permission notice
+are preserved on all copies.
+
+Permission is granted to copy and distribute modified versions of this
+manual under the conditions for verbatim copying, provided that the entire
+resulting derived work is distributed under the terms of a permission
+notice identical to this one.
+
+Permission is granted to copy and distribute translations of this manual
+into another language, under the above conditions for modified versions,
+except that this permission notice may be stated in a translation approved
+by the author.
+@end titlepage
+
+@node Überblick für Wechsler, Einleitung, Top, Top
+@chapter Überblick für Wechsler vom alten @sc{Sim}.
+
+Die nächste Generation von @sc{Sim} wird nicht mehr von den
+Simulations-Skripten gesteuert, sondern von Scheme-Programmen. Scheme
+ist eine richtige Programmiersprache und daher können die
+Steuerprogramme wesentlich kompliziertere Dinge veranstalten als die
+simplen, inflexiblen Skripte. Es können z.B. beliebig raffinierte
+Berechnungen durchgeführt um die Werte für die Generics zu bekommen und
+Scheme ist auch `performant' genug um das in endlicher Zeit zu schaffen.
+[Beispiel, vielleicht Thorstens Trellis Teil?]
+
+Es gibt auch die Möglichkeit, Simulationen hierarchisch zu beschreiben,
+sogar mit einer passenden, graphischen Oberfläche zum Klicken und
+Schieben (die allerdings noch keine hierachischen Schaltpläne hinkriegt,
+aber das macht der Hiwi...).
+
+Durch die größere Flexibilität der Steuerprogramme und durch die
+Hierarchien wird es ziemlich einfach, riesige Simulationen aus Dutzenden
+von Komponenten zusammenzustricken. Es ist recht ineffizient, wenn diese
+Komponenten alle in getrennten Prozessen laufen. Es werden deshalb
+mehrere Komponenten in einen Prozess gesteckt.
+
+Zur Geschwindigkeitssteigerung wurde die Möglichkeit zur dynamischen
+Anpassung der Häppchengröße aufgegeben. Dadurch kann der Zeitplan, wann
+die einzelnen Komponenten genug Daten haben, um weitermachen zu können,
+bereits im Voraus berechnet werden. Mit der jetzigen naiven
+Implementierung kann es allerdings recht leicht passieren, daß
+benötigten Pufferspeicher zwischen den einzelnen Komponenten riesig groß
+werden und die Sache dadurch wieder ineffizient oder unmöglich wird
+(aber das wird sich auch noch ändern, das macht der Hiwi...)
+
+@node Einleitung, Simulationsmodell, Überblick für Wechsler, Top
+@chapter Einleitung
+
+@sc{Sim} ist ein Softwarepaket, das bei der Erstellung und Koordination von
+Simulationen helfen soll, wie sie typischerweise am Lehrstuhl NT auftreten.
+
+Eine Simulation besteht aus mehreren @dfn{Blöcken}, die untereinander
+verbunden sind. Jeder Block ist ein separates Programm, das mit seiner
+Umgebung über @dfn{Ports} kommuniziert. Diese Ports werden über
+@dfn{Signale} miteinander verbunden. Über die Signale fliessen
+dann während der Simulation beliebige Daten, entweder in der Form von
+Bits oder als komplexe Zahlen. Die Daten auf den Signalen können mit
+verschiedenen @dfn{Flags} markiert sein, um z.B. Einschwingvorgänge von
+Decodern bei der statistischen Auswertung berücksichtigen zu können.
+Den Blöcken können allgemeine Parameter (@dfn{Generics}) zu Beginn der
+Simulation übergeben werden.
+
+Beispiele für Blöcke sind: Eine Quelle, die an ihrem Ausgang einen
+zufälligen Bitstrom erzeugt; ein Kodierer, der den Bitstrom zur
+Übertragung auf einem Kanal vorbereitet; ein Modell des Kanals; ein
+Dekodierer; ein Auswerter, der den originalen Bitstrom mit dem
+dekodierten vergleicht; Dateiblöcke, die die Signale an ihren Ports in
+Dateien schreiben oder aus ihnen lesen.
+
+Es gibt ein Programm (@samp{sim}), mit dem Simulationen (d.h. die
+Verbindungen der Blöcke untereinander und allgemeine Parameter)
+beschrieben und zur Ausführung gebracht werden können. Die Blöcke selbst
+sind ganz normale ausführbare Programme, die sich an ein paar
+Konventionen halten müssen. Zur Einhaltung dieser Konventionen gibt es
+eine C++-Klassensammlung (@samp{libsim}), die den Rahmen für die Umsetzung
+von Algorithmen in Programme vorgibt. Als Beispiele und für allgemeine
+Aufgaben gibt es eine Reihe von vorgefertigten Blöcken (@samp{bit-in},
+@samp{bit-out}, @samp{cpx-rand}, @samp{cpx-mult}, ...).
+
+@node Simulationsmodell, Scheme im Gröbsten, Einleitung, Top
+@chapter Das Simulationsmodell
+
+@menu
+* Blöcke::                      
+* Ports::                       
+* Generics::                    
+* Einschränkungen::             
+@end menu
+
+@node Blöcke, Ports, Simulationsmodell, Simulationsmodell
+@section Blöcke
+
+Die aktiven Elemente der Simulation sind die Blöcke. Ihre Aktionen
+werden als (möglicherweise endlose) Wiederholung eines
+Simulationsschritts ausgedrückt. Der Block wartet bis an seinen
+Eingabeports genug Daten angekommen sind, um einen Simulationsschritt
+auszuführen. Diese Daten werden dann verarbeitet um neue Daten für die
+Ausgabeports zu erzeugen.
+
+@node Ports, Generics, Blöcke, Simulationsmodell
+@section Ports, Signale und Häppchen
+
+Je ein Ausgabeport und ein Eingabeport verschiedener Blöcke werden
+durch ein @dfn{Signal} verbundenen. Ein- und Ausgabeports werden vom
+zugehörigen Block ein @dfn{Typ} zugeordnet.  Dieser Typ bestimmt die
+Interpretation des Datenstroms auf dem angeschlossenen Signal. Die
+Typen zweier verbundener Ports müssen übereinstimmen.
+
+Ports gibt es in zwei Varianten: `normale' Ports und
+@dfn{Multi-Ports}. An normale Ports muß genau ein Signal angeschlossen
+werden, Multi-Ports können mit einer beliebige Anzahl von Signalen
+verbunden werden. Der Block kann alle Signale, die an einen Multi-Port
+angeschlossen sind, getrennt voneinander behandeln; so als ob er für
+jedes Signal einen eigenen Port zur Verfügung hätte.
+
+Blöcke lesen pro Simulationsschritt ein @dfn{Häppchen} von jedem
+Eingabeport und schreiben je ein Häppchen auf jeden Ausgabeport. Ein
+Häppchen ist eine vom Block frei wählbare Anzahl von Daten des Typs des
+entsprechenden Ports. Diese Häppchengröße kann von Simulationsschritt zu
+Simulationsschritt variiert werden. Die lesenden und schreibenden Enden
+eines Signals müssen nicht mit derselben Häppchengröße arbeiten.
+
+@node Generics, Einschränkungen, Ports, Simulationsmodell
+@section Generics
+
+Vor Beginn der Simulation können den Blöcken noch Werte für allgemeine
+Parameter übergeben werden. Zu diesem Zweck definiert der Block
+@dfn{Generics}. Generics haben, wie Ports, einen Typ@footnote{Dieser
+Typ wird an keiner Stelle von @sc{sim} benutzt. Alle Generics werden als
+Strings verarbeitet.} Sie können nur dazu benutzt werden, den Block vor
+Beginn der Simulation zu initialisieren; zur Laufzeit der Simulation
+können über sie keine Daten ausgetauscht werden.
+
+@node Einschränkungen,  , Generics, Simulationsmodell
+@section Einschränkungen
+
+Es gibt keine Unterstützung für Rückkopplung. Für die erfolgreiche
+Anwendung von rückgekoppelten Schaltungen müssen die Signale mit Werten
+vorbelegt werden, so daß die Blöcke einer Schleife schon zu Beginn der
+Simulation Daten an ihren Eingabeports vorfinden aus denen sie dann
+Ausgabedaten erzeugen können und die Simulation weiterlaufen lassen
+können. Werden keine solche Daten angeboten, wartet jeder Block der
+Schleife bis in alle Ewigkeiten auf Daten seines Vorgängers, der
+wiederum auf seinen Vorgänger wartet. So wartet jeder Block letztlich
+auf sich selbst.
+
+Signale können nur genau zwei Ports miteinander verbinden, es können
+also nicht mehrere Blöcke an einen Ausgang eines anderen Blocks
+angeschlossen werden.
+
+Ein Block kann nur einen einzigen Eingangs-Multi-Port und nur einen
+einzigen Ausgangs-Multi-Port haben.
+
+@node Scheme im Gröbsten, Simulationskontrolle, Simulationsmodell, Top
+@chapter Scheme im Gröbsten
+
+Während man Blöcke noch größtenteils so schreiben kann wie bei der alten
+Generation von @sc{Sim}, ist von der alten Scriptsprache nicht mehr viel
+übriggeblieben. Und das ist auch gut so.
+
+Wenn man das erste mal mit Scheme in Berührung kommt, kann das leicht
+einen Kulturschock auslösen. Das ging mir nicht anders. Aber es lohnt
+sich.
+
+Scheme ist @emph{wesentlich} mächtiger und tatsächlich ist der weitaus
+größte Teil von @sc{Sim} selbst in Scheme geschrieben.
+
+Scheme zeichnet sich hauptsächlich dadurch aus, was es alles nicht hat:
+
+@itemize @bullet
+@item keine statischen Typen
+@item keine Infixoperatoren
+@item keine @emph{Punkt vor Strich}-Rechnung
+@item keine explizite Speicherverwaltung
+@item keine @samp{structs} oder Klassen
+@item keine Spezialsyntax
+@item keine Schleifen
+@item keine Probleme
+@end itemize
+
+Aber lest selbst: @ref{Top, Scheme Intro,, scheme-intro, The Scheme
+Programming Language}. Der Text ist vielleicht etwas
+heftig und ihr müsst natürlich nicht alles verstehen um ein paar simple
+Scripte zu schreiben. Aber das komplette Scheme ist da, falls ihr es
+braucht.
+
+Der nächste Abschnitt listet ein paar nützliche Dinge auf, mit denen ihr
+am Anfang auskommen müsstet. Die späteren Beschreibungen der @sc{Sim}
+spezifischen Dinge haben immer ein paar Beispiele dabei, die auch
+nützlich sein können.
+
+Die definitive Quelle zu Scheme ist @ref{Top, der vierte Scheme Report,,
+r4rs, The Revised(4) Report on Scheme}. Der Report enthält eine lange
+Literaturliste. Ein gutes Buch, daß es auch in der Lehrbuchsammlung der
+Uni-Bibliothek gibt, ist:
+
+@table @sc
+@item [SICP]
+Harold Abelson and Gerald Jay Sussman with Julie Sussman.
+@cite{Structure and Interpretation of Computer Programs.}
+MIT Press, Cambridge, 1985.
+
+Die @strong{Buchnummer} hab ich gerade nicht da.
+@end table
+
+Die Referenz für @sc{Guile}, die Scheme Implementierung die @sc{Sim}
+benutzt, ist @ref{Top, hier,, guile, The Guile Reference Manual}.
+
+
+@menu
+* Das Wichtigste::              
+@end menu
+
+@node Das Wichtigste,  , Scheme im Gröbsten, Scheme im Gröbsten
+@section Das Wichtigste
+
+Verglichen mit den @emph{üblichen} Sprachen wie C, C++, Pascal und auch
+zum Beispiel den Skript-orientierten Sprachen wie Perl, ist Scheme recht
+ungewöhnlich und es ist auf den ersten Blick nicht einzusehen, warum es
+(wie auch immer) @emph{besser} sein könnte. Trotz unserer kurzen
+Erfahrung mit Scheme, können wir aber sagen, dass es @emph{The Right
+Thing} ist.
+
+Die Stärke von Scheme sind wenige sehr mächtige Grundkonstrukte und so
+gut wie keine Einschränkungen wie man sie kombinieren kann. Ich hoffe,
+dass Scheme für den einen oder anderen noch einen Augenöffner
+bereithält, so wie das bei mir der Fall war.
+
+@heading Syntax
+
+Die Schemesyntax ist recht spartanisch, aber dafür auch sehr
+einheitlich. Die gesamte Struktur wird durch runde Klammern ausgedrückt;
+arithmetische Ausdrücke werden mit Klammern zusammengefasst,
+Funktionsaufrufe werden durch Klammern ausgedrückt, ebenso die
+Blockstruktur einzelner Funktionen.
+
+Dadurch hat man es recht schnell mit einer irren Schachtelungstiefe von
+Klammern zu tun, die man ohne einen vernünftigen Editor nicht stressfrei
+bewältigen kann. Mit ordentlicher Editorunterstützung und steigender
+Gewöhnung treten die Klammern aber in den Hintergrund und man sieht nur
+noch die Struktur.
+
+@subheading Kommentare
+
+Kommentare beginnen mit einem @samp{;} und enden am Ende der Zeile.
+
+Es gibt auch Blockkommentare, die mit einem @samp{#!} beginnen und beim
+nächsten @samp{!#} aufhören. Sie sind aber eher unüblich und
+funktionieren auch nicht überall.
+
+@subheading Arithmetische Ausdrücke
+
+Arithmetische Ausdrücke werden alle in @dfn{Prefix}-Form
+hingeschrieben. Prefix bedeutet, dass der Operator als erstes kommt und
+danach alle Operanden. Die gesamte Kombination wird von Klammern
+umschlossen. Zum Beispiel:
+
+@example
+;; addiere 2 und 2
+(+ 2 2)
+@result{}
+4
+@end example
+
+(Die erste Zeile ist ein Kommentar, die zweite Zeile ist der Scheme Code
+um den es gerade geht und die dritte und vierte Zeile gibt das Ergebnis
+des Ausdrucks an. Den Pfeil @result{} dürft ihr also nicht eintippen und
+er erscheint auch nicht auf dem Bildschirm. Er ist nur eine Konvention
+in diesem Text.)
+
+Die Operatoren sind meißtens nicht auf zwei Operanden beschränkt:
+
+@example
+(+ 1 2 3 4 5)
+@result{}
+15
+@end example
+
+Verschachtelte Ausdrücke sind auch ganz einfach und funktionieren wie
+man das erwartet:
+
+@example
+(+ 2 (* 3 4))
+@result{}
+24
+@end example
+
+Da man alle Ausdrücke immer in Klammern einschliessen muss, sind auch
+keine Vorrangregelungen (wie z.B. Punkt-vor-Strich) nötig.
+
+@example
+(* (+ 2 3) 4)
+@result{}
+20
+@end example
+
+@subheading Funktionsaufrufe
+
+Funktionsaufrufe sehen genauso aus wie arithmetische Ausdrücke:
+
+@example
+;; berechne den Sinus von Pi-halbe
+(sin (acos 0))
+@result{}
+1.0
+@end example
+
+Die arithmetischen Ausdrücke von oben sind tatsächlich nichts anderes
+als Funktionsaufrufe und @samp{+}, @samp{*} und die anderen Operatoren
+sind tatsächlich normale Funktionen mit ganz normalen Namen.  Namen in
+Scheme können neben Buchstaben und Ziffern auch eine Reihe Sonderzeichen
+enthalten, unter anderem @samp{+}, @samp{-}, @samp{*}, @samp{/},
+@samp{$}, @samp{&}, @samp{?} und @samp{!}.
+
+@subheading Variablen
+
+Neue Variablen können mit @code{define} angemeldet werden. Dabei muss
+ihnen auch gleich ein Wert gegeben werden.
+
+@example
+;; Definiere eine neue Variable mit Namen `snr' und Wert 20.
+(define snr 20)
+@end example
+
+Auf den Wert von Variablen wird zugegriffen, indem man einfach ihren
+Namen in einen Ausdruck schreibt.
+
+@example
+(/ snr 2)
+@result{}
+10
+@end example
+
+Wie oben erwähnt, können die Namen von Variablen auch seltsame Zeichen
+enthalten. Es ist zum Beispiel üblich, mehrere Teile eines Namens, die
+man in C mit @samp{_} trennen würde, durch @samp{-} zu trennen.
+
+@example
+(define snr/2 (/ snr 2))
+(define eine-variable-mit-wirklich-langem-namen 0)
+@end example
+
+Variablen kriegen neue Werte mit @samp{set!}:
+
+@example
+;; `snr' wird auf 30 gesetzt (`snr/2' bleibt aber natürlich
+;; weiterhin 10)
+
+(set! snr 30)
+@end example
+
+@subheading Typen
+
+Scheme hat die übliche Sammlung von Datentypen: Zahlen aller Couleur,
+inklusive komplexe, Zeichen, Strings und Booleans. Dazu kommen Vektoren
+und Listen zum kombinieren von Objekten.
+
+Scheme hat @dfn{dynamische} Typen, im Gegensatz zu z.B. C++, das
+statische Typen hat. Bei dynamisch Typen sind die Typen nicht mit
+Variablen verbunden, sondern mit den Werten, die diese Variablen
+haben. Das bedeutet zum Beispiel, dass eine Variable im Laufe des
+Programms Werte von allen möglichen Typen annehmen kann, und dass man
+deshalb auch beim Definieren der Variable keinen Typ angeben muss.
+
+@example
+1       ; Integer
+1.0     ; Real
+0+1i    ; imaginär
+"eins"  ; String
+#\1     ; Zeichen
+#t      ; Boolean `wahr'
+#f      ; Boolean `falsch'
+@end example
+
+Die meissten Funktionen sind @emph{generisch}, das heißt, sie können mit
+allen Kombinationen von Typen umgehen, die Sinn machen. Die
+Additionsfunktion @samp{+} kann zum Beispiel alle Sorten von Zahlen
+miteinander verrechnen und wandelt dabei passend um.
+
+@example
+(+ 1.23 2 1+2.5i)
+@result{}
+4.23+2.5i
+@end example
+
+Solange man alles richtig macht, braucht man sich über Typen keine
+Gedanken machen. Nur wenn man eine Funktion auch tatsächlich mit Werten
+aufruft, die keine passenden Typen haben, bekommt man eine
+Fehlermeldung. Wesentlich später also, als bei statischen Typen.
+
+@subheading Speicherverwaltung
+
+Die Speicherverwaltung in Scheme geschieht automatisch. Das bedeutet,
+dass man Objekte, die man nicht mehr braucht, einfach fallen lassen kann
+und das System sammelt den freigewordenen Speicherplatz wieder auf und
+verwendet ihn für andere Objekte.
+
+@example
+;; Ein String braucht natürlich Speicherplatz
+(define ein-string (string-append "Hallo, " "Welt!"))
+
+;; Aber wenn er nicht mehr gebraucht wird, braucht man ihn nicht
+;; explizit freigeben.
+(set! ein-string "Hi!")
+
+;; Der Speicherplatz von "Hallo, Welt!" wird nicht mehr gebraucht und
+;; irgendwann automatisch eingesammelt und wiederverwendet.
+@end example
+
+Obwohl man sich um das explizite Freigeben von Speicherplatz nicht
+kümmern muss und so tun kann, als ob man einen unendliche Hauptspeicher
+hat, sollte man natürlich trotzdem darauf achten, wie viel Müll man
+produziert, der eingesammelt werden muss. Je mehr das ist, desto mehr
+Arbeit muss das System beim Aufsammeln leisten und das geht natürlich
+auf die Performanz des gesamten Programms.
+
+@subheading Neue Funktionen
+
+Eigene Funktionen kann man auch mit @samp{define} definieren, zum
+Beispiel so:
+
+@example
+(define (quadrat x)
+  (* x x))
+
+(quadrat snr/2)
+@result{}
+100
+@end example
+
+Es ist auch möglich Funktionen zu definieren, die keinen Namen
+haben. Das ist auf den ersten Blick vielleicht etwas abgedreht, aber in
+Scheme eine ganz natürliche Sache. Dazu nimmt man @samp{lambda}:
+
+@example
+;; liefert eine unbenannte Funktion, die ihr einziges Argument
+;; quadriert.
+(lambda (x) (* x x))
+@end example
+
+
+Die Definition der @samp{quadrat}-Funktion von oben ist tatsächlich nur
+eine Abkürzung für
+
+@example
+(define quadrat (lambda (x) (* x x)))
+@end example
+
+@samp{quadrat} ist eine ganz normale Variable und ihr Wert ist
+zufälligerweise eine Funktion. Die anderen Funktionen von oben
+(@samp{sin}, @samp{acos} aber auch @samp{+}, @samp{*}, @samp{/}, etc.)
+sind auch @emph{nur} Variablen, die Funktionen als Werte haben. Man kann
+verrückte Dinge damit anstellen:
+
+@example
+;; rette den alten Wert von `+' nach `plus'
+(define plus +)
+;; setzte die Variable `+' auf irgendeinen Wert
+(set! + 2)
+;; und stifte Verwirrung
+(plus + +)
+@result{}
+4
+@end example
+
+Man sollte sich nur merken, dass sowas geht; und es nicht für eine gute
+Idee halten.
+
+Diese unbenannten Funktion sind (genau wie Zahlen und Strings auch) ganz
+normale Werte, die an Variablen zugewiesen werden können oder die man an
+andere Funktionen übergeben kann. Funktionen, die Funktionen als
+Argumente haben oder Funktionen als Rückgabewert liefern heißen auch
+@dfn{Funktionen höherer Ordnung}.  Funktionen höherer Ordnung sind eine
+sehr mächtige Sache. Man kommt nur sehr schwer ohne sie aus, wenn man
+sich einmal dran gewöhnt hat.
+
+@example
+(define (compose f g)
+  (lambda (x)
+    (f (g x))))
+
+(define sin-quadrat (compose quadrat sin))
+
+(+ (sin-quadrat 0.5) ((compose quadrat cos) 0.5))
+@result{}
+1.0
+@end example
+
+@subheading Verzweigungen
+
+Bedingte Verzweigungen gibt es natürlich auch in Scheme:
+
+@example
+(if (< snr 40)             ; Bedingung
+    (set! snr (+ snr 10))  ; Then-Zweig
+    (set! snr (+ snr  5))) ; Else-Zweig
+@end example
+
+Solche @samp{if}-Konstrukte können an jeder Stelle benutzt werden, an
+der ein Ausdruck stehen darf. Das Programmstückchen von oben könnte man
+also so abkürzen:
+
+@example
+(set! snr (+ snr (if (< snr 40) 10 5)))
+@end example
+
+Neben @samp{if} gibt es noch @samp{case}, das dem @samp{switch} von C
+gleicht, und @samp{cond}, das einer @samp{if-elseif}-Kette gleicht.
+
+@example
+(case n
+  ((1)
+   (display "n ist 1.\n"))
+  ((2 3 4 5)
+   (display "n ist zwischen 2 und 5.\n"))
+  (else
+   (display "n ist irgendwas anderes.\n")))
+
+(cond
+ ((= n 1)
+  (display "n ist 1.\n"))
+ ((and (>= n 2) (<= n 5))
+  (display "n ist zwischen 2 und 5.\n"))
+ (else
+  (display "n ist irgendwas anderes.\n")))
+@end example
+
+@subheading Lokale Variablen
+
+Bis jetzt waren alle Variablen (und alle Funktionen, aber das ist ja
+dasselbe), die wir mit @samp{define} definiert hatten, global.  Die
+einzigen Variablen, die nicht global waren, sind die Parameter der
+Funktionen, wie zum Beispiel das @samp{x} von @samp{quadrat}.
+
+Weitere lokale Variablen kann man sich mit @samp{let} besorgen.
+
+@example
+;; eine Funktion mit lokalen Variablen
+(define (euklid-distanz dx dy)
+  (let ((dx-quadrat (quadrat dx))
+        (dy-quadrat (quadrat dy)))
+
+    ;; `dx-quadrat' und `dy-quadrat' sind nur innerhalb
+    ;; des @samp{let} sichtbar.
+    (sqrt (+ dx-quadrat dy-quadrat))))
+@end example
+
+Man kann auch @samp{define} lokal in einer Funktion verwendet. Die so
+erzeugten Variablen sind dann ebenfalls lokal.
+
+@example
+(define (euklid-distanz dx dy)
+  (define dx-quadrat (quadrat dx))
+  (define dy-quadrat (quadrat dy))
+
+  ;; `dx-quadrat' und `dy-quadrat' sind nur innerhalb
+  ;; der Funktion sichtbar.
+  (sqrt (+ dx-quadrat dy-quadrat)))
+@end example
+
+@subheading Listen
+
+[...]
+
+So, das wär's im Groben. Aber eins fehlt noch, nämlich
+
+@subheading Schleifen
+
+Eigentlich gibt es in Scheme keine Schleifen. Tief im innersten wird
+alles durch Rekursion bewerkstelligt.
+
+Aber nach außen hin gibt es schon ein paar Schleifen-Konstrukte und man
+muss sich auch keine Gedanken über irgendwelche Stacküberlaufe machen.
+
+Mein Lieblings-Schleifenkonstrukt ist @samp{named let}:
+
+@example
+(let schleife ((i 0))
+  (display i)
+  (newline)
+  (if (< i 10)
+      (schleife (+ i 1))))
+@end example
+
+Das hier ist zum Beispiel eine iterative Version der Fakultäts-Funktion:
+
+@example
+(define (! n)
+  (let schleife ((zähler   n)
+                 (ergebnis 1))
+    (if (= zähler 1)
+        ergebnis
+        (schleife (- zähler 1) (* zähler ergebnis)))))
+
+(! 30)
+@result{}
+265252859812191058636308480000000
+@end example
+
+@node Simulationskontrolle, Blöcke erstellen mit libsim, Scheme im Gröbsten, Top
+@chapter Simulationskontrolle
+
+Zur Simulationskontrolle muss ein richtiges Scheme Programm geschrieben
+werden. Simple Sachen sind aber nicht viel aufwendiger als die alten
+Skripte.
+
+@menu
+* Beispiel::                    
+* Konvertieren::                
+* Laufenlassen::                
+* Kommandozeilen-Argumente::    
+* Schemeschimmer::              
+* Mehrere Simulationsdurchläufe::  
+* Hierarchie::                  
+@end menu
+
+@node Beispiel, Konvertieren, Simulationskontrolle, Simulationskontrolle
+@section Ein Beispiel zur Gewöhnung
+
+Das alte Sim-Script
+
+@example
+SIM_BLOCK_PATH="../test:../blocks";
+n=1000
+
+cpx-rand: output > s, atmost = $n;
+cpx-out: input < s;
+@end example
+
+sieht jetzt so aus:
+
+@example
+(set-sim-blockpath! '("../test" "../blocks"))
+
+(use-blocks cpx-rand cpx-out)
+
+(define n 1000)
+
+(define-signals s)
+(cpx-rand :output s :atmost n)
+(cpx-out :input s)
+@end example
+
+Bevor ein Block in der Simulation benutzt werden kann, muß er mit
+@code{use-blocks}@footnote{oder mit fortgeschritteneren Methoden}
+geladen werden.
+
+@defmac use-blocks blocks...
+Stellt jeden der @var{blocks} für den späteren Gebrauch im Skript zur
+Verfügung. @code{(use-blocks block)} ist nur eine bequemere Schreibweise
+für
+
+@example
+(define block (load-block "block"))
+@end example
+
+Alle mit @code{use-blocks} definierten Blöcke gehorchen deshalb den
+normalen Scheme-Regeln für Namen. Die Blöcke sind also lokal zu der
+Umgebung, in der sie definiert wurden.
+@end defmac
+
+@defun load-block block-name
+Sucht einen Block names @var{block-name} (ein Symbol oder ein String)
+und konstruiert ein passendes Objekt, das ihn im Skript representiert.
+So ein Blockobjekt ist ein ganz normales Schemeobjekt (wie z.B. Strings
+oder Zahlen) und kann ganz normal in Variablen gespeichert werden oder
+als Argument an Funktionen übergeben werden.@footnote{Das ist eigentlich
+nichts besonderes, aber ich wollte es mal explizit erwähnen, falls es
+nicht klar ist. (Bei TCL würde man allerdings schon bei so simplen
+Sachen auf die Schnauze fallen...)}
+@end defun
+
+@defun block? objekt
+Ermittelt ob @var{object} ein Block ist.
+@end defun
+
+@defun set-sim-blockpath! dir-list
+Legt die Verzeichnisse fest, in denen nach Blöcken gesucht werden soll.
+@end defun
+
+@defun sim-blockpath
+Liefert die aktuelle Liste der Verzeichnisse, die nach Blöcken
+durchsucht werden.
+@end defun
+
+Alle Signale, die in einer Simulationsbeschreibung verwendet werden
+sollen, müssen vorher angemeldet werden.
+
+@defmac define-signals signals...
+Definiert ein paar Signale. @code{(define-signals s)} ist nur eine
+Abkürzung für
+
+@example
+(define s (make-signal))
+@end example
+
+Die Signale sind also (wie die Blöcke) lokal zu der Umgebung, in der sie
+definiert wurden.
+@end defmac
+
+@defun make-signal
+Erzeugt ein neues Signal, mit dem Komponenten verbunden werden können.
+@end defun
+
+@defun signal? objekt
+Ermittelt, ob @var{objekt} ein Signal ist, d.h. mit @samp{make-signal}
+erzeugt wurde.
+@end defun
+
+Die Blöcke, die z.B. mit @code{use-blocks} definiert wurden, können als
+Prozeduren benutzt werden, um sie zu der Simulationsbeschreibung
+hinzuzufügen.
+
+@defun <block> :key1 value1 :key2 value2 ...
+Fügt einen Block in die Simulation ein. @var{<block>} kann z.B. von
+@code{use-blocks} definiert worden sein. Die @var{:key value} Paare
+bestimmen Werte für die Generics des Blocks und die Verbindungen der
+Ports. Wenn @var{:key} einen Port bezeichnet, muß der zugehörige
+@var{value} ein Signal sein, daß durch @code{define-signals} oder
+@code{make-signal} erzeugt wurde.
+@end defun
+
+@node Konvertieren, Laufenlassen, Beispiel, Simulationskontrolle
+@section Halbautomatisches Konvertieren der alten Skripte
+
+Damit man schneller ans Rennen kommt, gibt es etwas Unterstützung zum
+Konvertieren der alten Skripte in die passenden Scheme Programme. Diese
+Umwandlung ist aber nicht immer vollständig oder korrekt. Ihr müsst also
+wahrscheinlich bei nicht trivialen Skripten noch nachbessern.
+
+Die Konvertierung besorgt natürlich auch ein Scheme Programm, dass ihr
+von der Kommandozeile so aufrufen könnt:
+
+@example
+% sim-convert @var{old-script}
+@end example
+
+Das Kommando @samp{sim-convert} liest das alte Skript @var{old-script}
+und schreibt ein (in erster Näherung) äquivalentes Scheme Programm nach
+@samp{stdout}. Vor allen Dingen Variablen- und Parameter-Referenzen
+(@samp{$PATH}, @samp{$1}, etc.) werden nicht konvertiert. Das müsst ihr
+von Hand nachbessern.
+
+@node Laufenlassen, Kommandozeilen-Argumente, Konvertieren, Simulationskontrolle
+@section Simulationsprogramme laufenlassen
+
+Die grundlegende Methode, eine Simulation zu starten ist das Kommando
+@samp{sim-run}. Ihr könnt es von der Kommandozeile so aufrufen:
+
+@example
+% sim-run @var{script} @var{args...}
+@end example
+
+Die Simulation, die durch @var{script}@footnote{@var{script} ist
+natürlich eins von diesen neuen Schemeprogrammen, nicht ein altes
+Sim-Script.} beschrieben wird, wird zusammengebaut und
+laufengelassen. Die weiteren Argumente @var{args...} können von
+@var{script} abgefragt werden und zum genaueren einstellen der
+Simulation verwendet werden.
+
+Neben @samp{sim-run} gibt es auch @samp{sim-cockpit}, das auch
+Simulationen starten kann. Es ist aber nicht ernst gemeint. Dann gibt es
+noch @samp{sim-ed}, einen richtigen schematic-entry, der ernst gemeint
+ist. [Thorsten weiss mehr dazu].
+
+@node Kommandozeilen-Argumente, Schemeschimmer, Laufenlassen, Simulationskontrolle
+@section Kommandozeilen Argumente
+
+Um an die Kommandozeilen-Argumente zu kommen, mit denen ein Skript
+aufgerufen wurde, kann man die Funktion @samp{arg} benutzen.
+
+@defun arg n [default]
+Liefert den @var{n}ten Kommandozeilen-Argument.  Bei @var{n} = 0 wird
+der Name des Script geliefert. Wenn es nur weniger als @var{n} Argumente
+gibt, wird @var{default} zurückgegeben. Wenn @var{default} nicht
+angegeben wurde, gibt es eine Fehlermeldung und das Programm bricht ab.
+@end defun
+
+Falls @samp{arg} nicht ausreichend ist für eine ordentliche
+Parameterverarbeitung, gibt es noch @samp{args}.
+
+@defun args
+Liefert sämtliche Kommandozeilen-Argumente als Liste. Das erste Element
+der Liste ist der Name des Scripts.
+@end defun
+
+@strong{ACHTUNG}: alle Kommandozeilen Argumente werden als Strings
+geliefert. Ihr müsst sie von Hand in die passenden Typen umwandeln.  Die
+Funktion @samp{string->number} ist wahrscheinlich nützlich.
+
+@defun string->number string
+Wandelt @var{string} in die entsprechende Nummer. Wenn @var{string}
+keine gültige Nummer darstellt, wird @samp{#f} zurückgegeben.
+@end defun
+
+@node Schemeschimmer, Mehrere Simulationsdurchläufe, Kommandozeilen-Argumente, Simulationskontrolle
+@section Ein Schimmer von Scheme
+
+Wie schon so oft erwähnt, ist Scheme eine richtige Programmiersprache
+mit Variablen, Ausdrücken, Bedingungen, Funktionen und dem ganzen
+Kram. Das kann man wunderbar in Simulationsprogrammen nutzen.
+
+Man kann zum Beispiel die Generics für einzelne Blöcke auf beliebig
+komplizierte Weise aus den Kommandozeilen Argumenten ausrechnen.
+
+@example
+...
+(define snr1 (arg 1))
+(define snr2 (arg 2))
+
+(your-block :mean-snr (/ (+ snr1 snr2) 2) ...)
+...
+@end example
+
+[Thorstens Trellis Teil erwähnen]
+
+Man kann seine Simulation auf einer höheren Ebene beschreiben als nur
+mit einer starren Auflistung der beteiligten Komponenten und ihrer
+Verbindungen untereinander.
+
+Wenn zum Beispiel das zu simulierende System zwei fast identische
+Teilsysteme enthält, ist es besser die Struktur dieser ähnlichen Teile
+in einer Funktion zusammenzufassen und diese Funktion dann zweimal
+aufzurufen. Die Unterschiede zwischen den Teilen können durch Parameter
+dieser Funktion eingestellt.
+
+@example
+(define-signals s1 s2 n1 n2 m1 m2 g1 g2)
+
+(zufalls-quelle :output1 s1 :output2 s2)
+
+;; Strecke 1
+(modulator :input s1 :output n1)
+(kanal :input n1 :output m1 :snr snr1)
+(demodulator :input m1 :output g1)
+
+;; Strecke 2
+(modulator :input s2 :output n2)
+(kanal :input n2 :output m2 :snr snr2)
+(demodulator :input m2 :output g2)
+
+(vergleicher :input1 g1 :input2 g2)
+@end example
+
+Strecke 1 und Strecke 2 sind identisch bis auf den unterschiedlichen
+SNR. Aber das muss man erstmal erkennen und bei Veränderungen schleichen
+sich leicht Fehler ein. Besser ist
+
+@example
+(define (strecke in out snr)
+  (define-signals n m)
+  (modulator :input in :output n)
+  (kanal :input n :output m :snr snr)
+  (demodulator :input m :output out))
+
+(define-signals s1 s2 g1 g2)
+
+(zufalls-quelle :output1 s1 :output2 s2)
+
+;; Strecke 1
+(strecke s1 g1 snr1)
+
+;; Strecke 2
+(strecke s2 g2 snr2)
+
+(vergleicher :input1 g1 :input2 g2)
+@end example
+
+[Vielleicht bessere Beispiele finden?]
+
+@node Mehrere Simulationsdurchläufe, Hierarchie, Schemeschimmer, Simulationskontrolle
+@section Meherere Simulationsdurchläufe
+
+Oft ist es sinnvoll eine Simulation gleich mehrmals mit kontrollierten
+Veränderungen der Parameter laufen zu lassen.
+
+Um sowas zu erreichen, kann man die Funktion
+@samp{sim-run}@footnote{nicht verwechseln mit dem Schellkommando
+@samp{sim-run} von oben} benutzen. @samp{sim-run} kann eine Simulation
+explicit laufen lassen und wartet bis sie fertig ist.
+
+@defun sim-run setup-func setup-args...
+Lässt die Simulation laufen, die durch @var{SETUP-FUNC} beschrieben
+wird. @var{setup-func} ist eine Function, die die Simulation
+zusammenbauen muss. Sie wird mit den Argumenten @var{SETUP-ARGS}
+aufgerufen. @samp{sim-run} kehrt zurück, wenn die Simulation beendet
+ist.
+@end defun
+
+Zum Beispiel
+
+@example
+;; Eine Funktion, die die Simulation zusammenbaut.
+;; Der SNR ist noch offengelassen.
+;;
+(define (simulation snr)
+  (define-signals s g)
+  (quelle :output s)
+  (kanal :input s :output g :snr snr)
+  (senke :input g))
+
+;; Einmal den SNR von 10 bis 30 in 5er Schritten durchschwenken.
+;;
+(let snr-loop ((snr 10))
+  (sim-run simulation snr)
+  (if (< snr 30)
+      (snr-loop (+ snr 5))))
+@end example
+
+Der Zusammenhang zwischen den expliziten Simulationsläufen mit
+@samp{sim-run} und den impliziten einfach durch hinschreiben der
+Komponenten ist etwas tricky. Am besten vermeidet ihr irgendwelche
+Mischformen und lasst entweder @samp{sim-run} komplett weg, oder
+plaziert Komponenten nur in Funktionen, die ihr @samp{sim-run} übergebt.
+
+@node Hierarchie,  , Mehrere Simulationsdurchläufe, Simulationskontrolle
+@section Hierarchie
+
+Man kann auch über das simple Verpacken von Teilen der Simulation in
+Funktionen hinausgehen und seine Systeme richtig hierarchisch
+beschreiben.
+
+`Hierarchisch' bedeutet, daß einige Blöcke der Simulation nicht direkt
+in C geschrieben sind, sondern eine innere Struktur haben, die ebenfalls
+aussieht wie eine Simulationsbeschreibung. Von aussen sehen diese
+strukturellen Blöcke wie alle anderen auch aus, wenn man sie aber in
+eine Simulation einbaut, wird automatisch die innere Struktur ausgepackt
+und passend in die übergeordnete Beschreibung eingebaut.  Strukturelle
+Blöcke können natürlich als Teile ihrer inneren Struktur ebenfalls
+strukturelle Blöcke enthalten.
+
+Solche strukturellen Blöcke werden in Scheme definiert. Dazu gibt es die
+Funktion @samp{make-block} und das Macro @samp{define-block}. Ein
+heftiges Beispiel ist folgendes:
+
+@example
+;; Definiere einen neuen Block namens `cascade', der N Blöcke vom Typ
+;; BLOCK hintereinander schaltet.
+;;
+(define-block cascade ((= n number 1) 
+		       (= block block)
+		       (< input any)
+		       (> output any))
+
+  :validate ((if (< n 1)
+		 (invalid 'n "must be at least 1"))
+	     (if (not (block? block))
+		 (invalid 'block "must be a block")))
+  
+  :structure ((let loop ((in input) (cnt n))
+		(if (= cnt 1)
+		    (block :input in :output output)
+		    (let ((s (make-signal)))
+		      (block :input in :output s)
+		      (loop s (- cnt 1)))))))
+
+...
+
+;; Schalte 17 awgn Kanäle hintereinander
+(use-blocks awgn)
+(cascade :block awgn :n 17 :input s :output g)
+
+...
+
+@end example
+
+Dieses Text enhält noch nicht genug Sachen um das folgende verständlich
+machen zu können. Aber es reicht schon wenn ihr so ungefähr erahnen
+könnt, was möglich ist.  Falls ihr es gebrauchen könnt, fragt einfach
+Thorsten wie's wirklich geht...
+
+@defun make-block :keyword value...
+@samp{make-block} creates new blocks that can be used in simulations.
+
+A block can either be @emph{structural} or @emph{behavioral}. Behavioral
+blocks directly describe what happens during the actual simulation, they
+are typically written in C++; structural blocks contain a description of
+some part of the simulation network in terms of more `basic' blocks,
+they are written in Scheme.
+
+@samp{make-block} takes a list of keyword-value pairs with the following
+possible keywords:
+
+@table @samp
+@item :interface @var{interface}
+@var{interface} is the list of preformals or formals for this block.
+
+@item :dynblock @var{filename}
+FILENAME is the name of the program to run during the simulation.  If
+you use @samp{:dynblock} you don't need @samp{:interface}.
+
+@item :name @var{id}
+@var{id} is only used for printing.
+
+@item :validate-proc @var{proc}
+@var{proc} is called to validate the arguments of an application of
+this block. It is called as
+@example
+proc @var{invalid} @var{kv-list}
+@end example
+
+@var{invalid} is a procedure that should be called if any problems
+are detected; call it as
+@example
+invalid @var{formal-name} @var{messages...}
+@end example
+
+@item :structure-proc @var{proc}
+@var{proc} is called to elaborate the structure of this block. It is
+called as:
+@example
+proc @var{kv-list}
+@end example
+@end table
+
+You must either use @samp{:dynblock} (indicating a behavioral block) or
+@samp{:structure} (indicating a structural block).
+
+The result of @samp{make-block} is an object with the following operations:
+
+@defun block-interface block
+returns the interface of the block.
+@end defun
+
+@defun block-name block
+returns the name or `#f'
+@end defun
+
+@defun block-dynblock block
+returns the dynblock or `#f'
+@end defun
+
+@defun block-structural? block
+guess what
+@end defun
+
+@defun block-validate block invalid kv-list
+Validate @var{kv-list} and call @var{invalid} with any problems.
+@end defun
+
+@defun block-elaborate block spec kv-list
+Elaborate the structure of this block into the specification @var{spec}.
+@end defun
+
+You can also use the block object as a procedure.
+
+@defun <block> :key1 value1 :key2 value2 ...
+Add the block with the given parameters to the current
+specification. This simply calls
+@example
+(spec-add! (current-spec) block @var{kv-list})
+@end example
+The current specification determines what really happens. A elaborating
+specification, for example, simply records behavioral blocks but
+immediatly elaborates structural ones into their basic behavioral
+blocks.
+@end defun
+
+@end defun
+
+@defmac define-block name interface :keyword value...
+Convenience macro for defining new blocks. 
+
+@example
+(define-block @var{name} @var{interface} @var{:key1} @var{value1...})
+@end example
+
+is equivalent to
+
+@example
+(define @var{name} (make-block :interface @var{interface} :name @var{name}
+                               @var{:key1} @var{value1...}))
+@end example
+
+In addition to the keywords accepted by @samp{make-block}, @samp{define-block}
+recognizes the following two:
+
+@table @samp
+
+@item :validate (@var{body...})
+@itemx :structure (@var{body...})
+For both, the corresponding @samp{:validate-proc} or
+@samp{:structure-proc} is generated. The @var{body} can access the
+values for the formals of the block simply by name. The @var{body} for
+@samp{:validate} can call a procedure named @samp{invalid} to flag
+invalid values.
+@end table
+
+@end defmac
+
+@node Blöcke erstellen mit libsim, Implementation, Simulationskontrolle, Top
+@chapter Blöcke erstellen mit libsim
+
+@samp{libsim} stellt ein paar C++-Klassen zur Verfügung, mit denen recht
+einfach Blocke geschrieben werden können, die in eine Simulation
+eingebaut werden können. Dazu leitet man eine neue Klasse von einer
+passenden Basisklasse aus @samp{libsim} ab und implementiert das
+Verhalten des Algorithmus' durch Neudefinition von virtuellen Funktionen
+der Basisklasse.  Im Laufe der Simulation werden dann die neu
+definierten Funktionen automatisch aufgerufen.
+
+Zur benutzung von @samp{libsim} ist die Headerdatei @file{<sim/sim.h>}
+erforderlich.
+
+@menu
+* Blöcke linken::               
+* Beispielblock::               
+* Datentypen::                  
+* Beschreibung der Blockschnittstelle::  
+* Initialisierung::             
+* Simulationsschritte::         
+* Programmende::                
+* Markierte Daten::             
+* Multi-Ports::                 
+@end menu
+
+@node Blöcke linken, Beispielblock, Blöcke erstellen mit libsim, Blöcke erstellen mit libsim
+@section Blöcke linken
+
+Die Blöcke sind keine normalen ausführbaren Programme sondern besondere
+Libraries, die von @sc{Sim} dynamisch geladen werden. Deshalb können sie
+auch nicht wie normale Programme gelinkt werden. Zum Linken sollte das
+spezielle Programm @samp{sim-link-block} verwendet werden.
+
+@example
+% sim-link-block @var{block} @var{rest...}
+@end example
+
+Der neue Block @var{block} wird aus @var{rest...} zusammengelinkt.
+
+@node Beispielblock, Datentypen, Blöcke linken, Blöcke erstellen mit libsim
+@section Beispielblock
+
+Ein Programm, das als Block in einer Simulation mitwirkt, kann
+folgendem Muster folgen:
+
+@example
+#include <sim/sim.h>
+#include <stdio.h>
+
+/* Die Verarbeitung erfolgt in einem sim_bit_output_block mit einem
+** Eingangs- und einem Ausgangsport. Es wird pro Simulationsschritt eine
+** komplexe Zahl gelesen, in ein Bit umgewandelt und ausgegeben.
+*/
+
+// Schritt 1: Beschreibung der Ports des Blocks
+
+static sim_generic cpx2bit_generics[] = @{ 
+    @{ "threshold", "float", "0.5" @}, 
+        // Ein Generic mit Namen "threshold", Typ float,
+        // und Default 0.5.
+    NULL
+@};
+
+static sim_port cpx2bit_inputs[] = @{
+    @{ "input", SIM_T_COMPLEX, 1 @},
+        // Ein Eingangsport mit Namen "input" für komplexe Zahlen,
+        // Typ complex und Häppchengröße 1.
+    NULL
+@};
+
+static sim_bit_port cpx2bit_outputs[] = @{
+    @{ "output", SIM_T_BIT, 1, 1 @},
+        // Ein Ausgangsport für Bits mit Namen "output",
+        // Typ bit, 1 Bits pro "sim_bits" und Häppchengröße 1.
+    NULL
+@};
+
+// Schritt 2: Definition der Klasse für den Block
+
+/* cpx2bit wird von sim_bit_output_block abgeleitet, d.h. die
+** Eingabeports erwarten komplexe Zahlen und die Ausgabeports
+** produzieren Bits
+*/
+
+struct cpx2bit : sim_bit_output_block @{
+
+    cpx2bit();
+
+    virtual bool init(char **gvals);
+        // init wird vor Beginn der Simulation einmal aufgerufen.
+        // GVALS beinhaltet die Werte für die Generics.
+
+    virtual void step(const sim_complex **in, sim_bits **out);
+        // step beinhaltet den eigentlichen Algorithmus. Aus den
+        // Eingabewerten in IN werden die neuen Ausgabewerte in
+        // OUT berechnet.
+
+    // Was man sonst noch so für seinen Algorithmus braucht...
+    //
+    float threshold;
+@};
+
+cpx2bit::cpx2bit() :
+    sim_bit_output_block(cpx2bit_generics,
+                         cpx2bit_inputs,
+                         cpx2bit_outputs)
+@{
+@}
+
+bool cpx2bit::init(char **gvals)
+@{
+    if(!sim_bit_output_block::init(gvals))
+        return false;
+
+    threshold = atof(gvals[0]);
+    if(threshold <= 0 || threshold > 1.0) @{
+        fprintf(stderr, "cpx2bit: threshold muß zwischen 0 und 1 liegen\n")
+        return false;
+    @}
+
+    return true;
+@}
+    
+void cpx2bit::step(const sim_complex **in, sim_bits **out)
+@{
+    if(abs(in[0][0]) >= threshold)
+        out[0][0] = 1;
+    else
+        out[0][0] = 0;
+@}
+
+// Schritt 3: Anmelden
+
+SIM_DECLARE_BLOCK (cpx2bit);
+
+@end example
+
+@node Datentypen, Beschreibung der Blockschnittstelle, Beispielblock, Blöcke erstellen mit libsim
+@section Datentypen
+
+Esgibt nur zwei Typen, die über die Signale übertragen werden können:
+komplexe Zahlen oder Bits.@footnote{Richtige, echte Bits, von denen 32
+in ein @samp{int} passen.}
+
+Ein Block kann sich unabhängig für Eingänge und für Ausgänge eine
+Interpretation aussuchen. Alle Eingänge müssen aber gleich behandelt
+werden. Ebenso alle Ausgänge. Es gibt also vier Möglichkeiten:
+
+@ifinfo
+@example
+Eingänge | Ausgänge | Basisklasse (siehe unten)
+---------+----------+---------------------------
+komplex  | komplex  | sim_block
+komplex  | Bits     | sim_bit_output_block
+Bits     | komplex  | sim_bit_input_block
+Bits     | Bits     | sim_bit_block
+@end example
+@end ifinfo
+@tex
+\def\_{\char'137}
+\medskip
+\hbox{\hskip 3\parindent\vbox{\offinterlineskip\tabskip=1em
+\halign{\strut#\hfil&\vrule#&#\hfil&\vrule#&\tt#\hfil\cr
+Eingänge && Ausgänge && \rm Basisklasse (siehe unten) \cr 
+\omit & height 2pt &\omit&&\cr \noalign{\hrule}
+\omit & height 2pt &\omit&&\cr
+komplex  && komplex  && sim\_block \cr
+komplex  && Bits     && sim\_bit\_output\_block \cr
+Bits     && komplex  && sim\_bit\_input\_block \cr
+Bits     && Bits     && sim\_bit\_block \cr}}}
+@end tex
+
+Komplexe Zahlen werden von @samp{libsim} durch den C++ Typ
+@code{sim_complex} dargestellt. Ein Häppchen aus komplexen Zahlen
+besteht einfach aus @var{m} komplexen Zahlen und wird dem Algorithmus
+als Array aus @var{m} @code{sim_complex} gereicht. @code{sim_complex}
+ist einfach nur ein anderer Name für einen der vielen complex Typen von
+C++, meistens für @code{double_complex}.
+
+Bits werden in Objekten vom Typ @code{sim_bits}@footnote{irgendein
+Integertyp, meistens @code{unsigned long}.} untergebracht. Ein
+@code{sim_bits} kann bis zu @code{SIM_N_BITS} Bits aufnehmen. Ein
+Bithäppchen besteht aus @code{@var{m}*@var{n}} Bits und wird als Array
+aus @var{m} @code{sim_bits} gereicht. In jedem Element eines solchen
+Arrays sind nur die untersten @var{n} Bits gültig.
+
+Wenn im folgenden von einem @code{sim_*_block} die Rede ist, sind alle
+vier Varianten @code{sim_block}, @code{sim_bit_block},
+@code{sim_bit_input_block} und @code{sim_bit_output_block} gemeint.
+
+@node Beschreibung der Blockschnittstelle, Initialisierung, Datentypen, Blöcke erstellen mit libsim
+@section Beschreibung der Blockschnittstelle
+
+Die Namen und Typen der Generics und Ports des Blocks werden durch
+Strukturen beschrieben.
+
+@deftp Type {struct sim_generic}
+Ein @code{sim_generic} beschreibt den Namen, den Typ und den
+voreingestellten Wert eines Generics. Die Struktur hat folgende Elemente:
+
+@table @code
+@item char *name
+Der Name des Generics. Dieser kann im Simulationsskript verwendet
+werden, um dieses Generic anzusprechen.
+
+@item char *type
+Es sind noch keine Typen festgelegt. Alles ist möglich.
+
+@item char *def
+Der voreingestellte Wert. Wird im Simulationsskript für dieses Generic
+kein Wert angegeben, wird dieser String verwendet. @code{NULL} bedeutet:
+kein voreingestellter Wert. Im Simulationskript muß diesem Generic dann
+ein Wert zugewiesen werden.
+@end table
+@end deftp
+
+@deftp Type {struct sim_port}
+Ein @code{sim_port} beschreibt den Namen und die voreingestellte
+Häppchengröße eines Eingabe- oder Ausgabeports für komplexe Zahlen.
+Die Struktur hat folgende Elemente:
+
+@table @code
+@item char *name
+Der Name des Ports. Dieser kann im Simulationsskript verwendet werden,
+um diesen Port anzusprechen.
+
+@item sim_port_type type
+Entweder @code{SIM_T_COMPLEX} für normale Ports oder
+@code{SIM_T_MULTI_COMPLEX} für Multi-Ports.
+
+@item size_t size
+Die voreingestellte Häppchengröße. Sie kann nachträglich in der
+@samp{init} Funktion geändert werden.
+
+@end table
+@end deftp
+
+@deftp Type {struct sim_bit_port}
+Ein @code{sim_bit_port} beschreibt den Namen und die voreingestellte
+Häppchengröße eines Eingabe- oder Ausgabeports für Bits. Die Struktur
+hat folgende Elemente:
+
+@table @code
+@item char *name
+Der Name des Ports. Dieser kann im Simulationsskript verwendet werden,
+um diesen Port anzusprechen.
+
+@item sim_port_type type
+Entweder @code{SIM_T_BIT} für normale Ports oder
+@code{SIM_T_MULTI_BIT} für Multi-Ports.
+
+@item size_t n_bits
+Die Anzahl der gültigen Bits in einem Element des
+@code{sim_bits}-Arrays, das die @code{step}-Routine (siehe unten)
+bearbeitet.
+
+@item size_t size
+Wie bei @code{sim_port}.
+@end table
+@end deftp
+
+
+Die Beschreibungen für alle Generics, Eingabe- und Ausgabeports werden
+jeweils zu einem Array zusammengefasst. Zur Kennzeichnung des Endes
+eines solchen Arrays hat @code{name} des letzten Elements den Wert
+@code{NULL}.
+
+@node Initialisierung, Simulationsschritte, Beschreibung der Blockschnittstelle, Blöcke erstellen mit libsim
+@section Initialisierung
+
+Zu Beginn der Simulation werden die Blöcke initialisiert. Dann wird die
+Simulationsschritt-Routine solange in einer Schleife aufgerufen, wie
+Daten an den Eingabeports ankommen. Hat ein Block keine Eingabeports,
+wir die Simulationschritt-Routine solange aufgerufen, bis alle
+Ausgabeports mit @code{close_ports} geschlossen werden.
+
+Die Initialisierung eines Blocks ist in zwei Phasen aufgeteilt:
+Konstruktion, in der noch keine Werte für die Generics bekannt sind und
+die eigentliche Initialisierung.
+
+@deftypefun  {} sim_block::sim_block (sim_generic *@var{gen}, sim_port *@var{in}, sim_port *@var{out})
+@deftypefunx {} sim_bit_block::sim_bitblock (sim_generic *@var{gen}, sim_bit_port *@var{in}, sim_bit_port *@var{out})
+@deftypefunx {} sim_bit_input_block::sim_bit_input_block (sim_generic *@var{gen}, sim_bit_port *@var{in}, sim_port *@var{out})
+@deftypefunx {} sim_bit_output_block::sim_bit_output_block (sim_generic *@var{gen}, sim_port *@var{in}, sim_bit_port *@var{out})
+
+Der Konstruktor von @code{sim_*_block} notiert die
+Schnittstellenbeschreibung, so daß sie beim Einbauen in die Simulation
+zur Verfügung steht. @var{gen}, @var{in} und @var{out} sind jeweils
+Arrays deren Ende durch einen Eintrag mit @code{name == NULL}
+gekennzeichnet ist. @var{gen} beschreibt die Generics, @var{in} die
+Eingabeports und @var{out} die Ausgabeports.
+
+Die Anzahl der Eingabe- bzw. Ausgabeports wird in
+@code{sim_*_block::n_in} bzw. @code{sim_*_block::n_out} festgehalten.
+@end deftypefun
+
+Nachdem sie Simulation zusammengebaut wurde, wird die eigentliche
+Initialisierung des Blocks durch Aufruf der @code{init} Funktion
+durchgeführt. Diese virtuelle Funktion muß vom Block überladen werden,
+um eigene Auswertungen der Generics durchzuführen.
+
+@deftypefun {virtual bool} sim_*_block::init (char **@var{gen_vals})
+Wird zur Initialisierung des Blocks aufgerufen. @var{gen_vals} ist ein
+Array mit den Werten für die Generics, die dem Konstruktor mitgegeben
+wurden. @var{gen_vals} ist parallel zu dem @code{sim_generics} Array,
+d.h der Wert des Generics, der als erstes im @code{sim_generics} Array
+steht, findet sich in @code{gen_vals[0]}, der Wert des zweiten in
+@code{gen_vals[1]}, usw.
+
+Der Rückgabewert von @code{init} gibt an, ob die Initialisierung
+erfolgreich war. Im Falle eines Fehlers, sollte eine Fehlermeldung nach
+@code{stderr} geschrieben und @code{false} zurückgegeben werden. Wenn
+alles gutgegangen ist, wird @code{true} zurückgegeben.
+
+Da auch die Basisklasse initialisiert werden muß, muß zu Beginn von
+@code{init} immer ein Aufruf der @code{init}-Funktion der Basisklasse
+erfolgen, z.B:
+@example
+if(!sim_block::init(gen_vals))
+    return false;
+@end example
+@end deftypefun
+
+In der @code{init}-Funktion kann die Häppchengröße für die Eingabe- und
+Ausgabeports noch geändert werden, später nicht mehr.
+
+@deftypefun  void sim_block::set_in_size (int @var{p}, size_t @var{s})
+@deftypefunx void sim_bit_block::set_in_size (int @var{p}, size_t @var{n_bits}, size_t @var{s})
+@deftypefunx void sim_bit_input_block::set_in_size (int @var{p}, size_t @var{n_bits}, size_t @var{s})
+@deftypefunx void sim_bit_output_block::set_in_size (int @var{p}, size_t @var{s})
+
+@code{set_in_size} legt die Häppchengröße für einen Eingabeport
+fest. @var{p} ist der Index der entsprechenden Portbeschreibung im
+@code{sim_port} Array, @var{s} ist die gewünschte Häppchengröße für den
+nächsten Aufruf von @code{step} und @var{n_bits} ist die Anzahl der
+gültigen Bits pro @code{sim_bits}.
+@end deftypefun
+
+@deftypefun  void sim_block::set_out_size (int @var{p}, size_t @var{s})
+@deftypefunx void sim_bit_block::set_out_size (int @var{p}, size_t @var{n_bits}, size_t @var{s})
+@deftypefunx void sim_bit_input_block::set_out_size (int @var{p}, size_t @var{n_bits}, size_t @var{s})
+@deftypefunx void sim_bit_output_block::set_out_size (int @var{p}, size_t @var{s})
+
+@code{set_out_size} legt die Häppchengröße für einen Ausgabeport
+fest. @var{p} ist der Index der entsprechenden Portbeschreibung im
+@code{sim_port} Array, @var{s} ist die gewünschte Häppchengröße und
+@var{n_bits} ist die Anzahl der gültigen Bits pro @code{sim_bits}.
+
+@end deftypefun
+
+@node Simulationsschritte, Programmende, Initialisierung, Blöcke erstellen mit libsim
+@section Simulationsschritte
+
+Zur Implementierung der Simulationschritte wird die @code{step}-Funktion
+überladen:
+
+@deftypefun  {virtual void} sim_block::step (const sim_complex **@var{in}, sim_complex **@var{out})
+@deftypefunx {virtual void} sim_bit_block::step (const sim_bits **@var{in}, sim_bits **@var{out})
+@deftypefunx {virtual void} sim_bit_input_block::step (const sim_bits **@var{in}, sim_complex **@var{out})
+@deftypefunx {virtual void} sim_bit_output_block::step (const sim_complex **@var{in}, sim_bits **@var{out})
+
+@code{step} wird aufgerufen, wenn genug Daten eingetroffen sind, um für
+jeden Eingabeport ein Häppchen zu bilden. Diese Häppchen finden sich in
+@var{in}, für den ersten Port aus dem @code{sim_port} Array in
+@var{in[0]}, für den zweiten in @var{in[1]}, usw.
+
+Die Daten für die Ausgabehäppchen müssen in die @var{out} Arrays
+abgelegt werden. @var{out[0]} erhält die Daten für den ersten
+Ausgabeport aus dem @code{sim_port} Array, usw.
+@end deftypefun
+
+@node Programmende, Markierte Daten, Simulationsschritte, Blöcke erstellen mit libsim
+@section Programmende
+
+@ignore
+@code{step} wird solange aufgerufen, bis die Ports des Blocks
+geschlossen werden. Das kann von außen geschehen, indem die anderen
+Blöcke ihre Ports schließen, die mit den Ports dieses Blocks verbunden
+sind. Die Ports können auch explizit in der @code{step} Funktion selbst
+geschlossen werden:
+
+@deftypefun void sim_*_block::close_ports ()
+Schließt alle Eingabe- und Ausgabeports. Die Simulation und damit
+@code{sim_main} werden beendet. Die Ausgabedaten des laufenden
+Simulationsschrittes werden nicht mehr ausgegeben.
+@end deftypefun
+
+Wenn am Ende der Simulation noch Simulationsschritte ausgeführt werden
+sollen, obwohl keine Eingabedaten mehr ankommen, kann die Funktion
+@code{sim_*_block::flush_step} überladen werden:
+
+@deftypefun  {virtual void} sim_block::flush_step (sim_complex **@var{out})
+@deftypefunx {virtual void} sim_bit_block::flush_step (sim_bits **@var{out})
+@deftypefunx {virtual void} sim_bit_input_block::flush_step (sim_complex **@var{out})
+@deftypefunx {virtual void} sim_bit_output_block::flush_step (sim_bits **@var{out})
+
+Sobald alle Eingabeports geschlossen sind, wird @code{flush_step}
+solange in einer Schleife aufgerufen, bis auch die Ausgabeports durch
+@code{close_ports} geschlossen werden.
+
+@var{out} nimmt die Ausgabedaten auf, analog zu @code{step}.
+@end deftypefun
+@end ignore
+
+Zum Schluß einer erfolgreichen Simulation (kurz bevor @code{sim_main}
+zurückkehrt) wird die virtuelle Funktion @code{sim_*_block::epilog}
+aufgerufen.
+
+@deftypefun {virtual void} sim_*_block::epilog ()
+@code{epilog} kann neudefiniert werden, um am Simulationsende noch
+Aufräumarbeiten zu erledigen oder ein paar Statistiken wegzuschreiben.
+@code{epilog} wird nur aufgerufen, wenn die Simulation erfolgreich war,
+wobei geschlossene Ports und ein Abbruch mit SIGINT auch als Erfolg
+gelten.
+@end deftypefun
+
+@node Markierte Daten, Multi-Ports, Programmende, Blöcke erstellen mit libsim
+@section Markierte Daten
+
+Alle Häppchen können mit Flags markiert sein. Um auf die Flags der
+Eingabehäppchen zuzugreifen und die Flags der Ausgabehäppchen zu setzen,
+kann man in der @code{step} Routine die Funktionen
+@code{sim_*_block::get_in_flags} bzw. @code{sim_*_block::set_out_flags}
+aufrufen.
+
+@deftypefun sim_flags sim_*_block::get_in_flags (int @var{p})
+@code{get_in_flags} liefert die Flags des gerade bearbeiteten
+Eingabehäppchens mit Index @var{p}.
+@end deftypefun
+
+@deftypefun void sim_*_block::set_out_flags (int @var{p}, sim_flags @var{f})
+@code{set_out_flags} setzt die Flags des gerade berechneten
+Ausgabehäppchens mit Index @var{p} auf @var{f}.
+@end deftypefun
+
+Von @samp{libsim} wird keinem der Flags besondere Beachtung zuteil. Es gibt
+aber ein vordefiniertes Flag für einen speziellen Verwendungszweck.
+
+@deftypevar sim_flag simf_init
+Das Initflag. Kann verwendet werden, um Einschwingvorgänge bei
+Decodern in der statistischen Auswertung berücksichtigen zu können.
+@end deftypevar
+
+@node Multi-Ports,  , Markierte Daten, Blöcke erstellen mit libsim
+@section Multi-Ports
+
+Die Schnittstelle eines Blockes ist ziemlich statisch: es gibt eine
+genau festgelegte Anzahl von Eingangs- und Ausgangsports mit genau
+festgelegten Typen. Um diese Einschränkung etwas aufzuweichen kann man
+maximal einen der Eingangs- und maximal einen der
+Ausgangsports@footnote{also insgesamt höchstens zwei} zu einem
+@dfn{Multi-Port} erklären.
+
+Ein Multi-Port kann -- im Gegensatz zu normalen Ports -- mit mehr als
+einem Signal verbunden werden (oder auch mit gar keinem). Diese Signale
+sind alle voneinander unabhängig und werden von der @code{step} Routine
+auch getrennt behandelt. Nachdem für eine konkrete Anwendung des Blocks
+feststeht, wie viele Signale tatsächlich an einem Multi-Port
+angeschlossen sind, wird dieser Multi-Port durch genau die richtige
+Anzahl normaler Ports ersetzt.
+
+Ein Beispiel: Der Block @samp{multi-mult} hat einen Multi-Port als
+Eingang und einen normalen Port als Ausgang. Pro Simulationsschritt
+werden aus jedem der Signale, die an den Eingang angeschlossen sind,
+eine komplexe Zahl gelesen. Diese Zahlen werden alle miteinander
+multipliziert und das Ergebnis wird in den Ausgang gesteckt.
+
+Die Deklaration des Multi-Eingangsports sieht so aus:
+
+@example
+sim_port multi_inputs[] = @{
+    @{ "input", SIM_T_MULTI_COMPLEX, 1 @},
+    NULL
+@};
+@end example
+
+Das wichtige ist, daß der Typ des Ports @code{SIM_T_MULTI_COMPLEX} ist.
+
+Die @code{step}-Routine erhält in dem Array mit den Eingabehäppchen
+nicht wie bei normalen Ports nur einen Eintrag pro Port, sondern einen
+Eintrag für jedes Signal des Multi-Ports. Die Variable @code{n_in} gibt
+an, wie viele Einträge das Array tatsächlich hat.
+
+Die @code{step}-Routine könnte z.B. so aussehen:
+
+@example
+void
+multi_mult::step (const sim_complex **in, sim_complex **out) 
+@{
+    out[0][0] = 1;
+    for (int i = 0; i < n_in; i++)
+        out[0][0] *= in[i][0];
+@}
+@end example
+
+Noch konkreter: Im Simulationsscript werden dem Eingang zwei Signale
+zugeordnet:
+
+@example
+@dots{}
+multi-mult: input < (s1 s2), output > g;
+@dots{}
+@end example
+
+Danach hat @code{n_in} den Wert @code{2}, @code{in[0]} erhält die Happen
+von Signal @code{s1} und @code{in[1]} die von @code{s2}.
+
+Der Einfachheit halber kann nur der letzte Port in der Port-Deklaration
+ein Multi-Port sein. Nach folgender Eingangsport-Deklarationen:
+
+@example
+sim_port inputs[] = @{
+    @{ "vektoren", SIM_T_COMPLEX, 2 @}
+    @{ "hints", SIM_T_COMPLEX, 3, @}
+    @{ "komponenten", SIM_T_MULTI_COMPLEX, 1 @},
+    NULL
+@};
+@end example
+
+finden sich die Daten vom Port @code{vektoren} innerhalb der
+@code{step}-Routine in @code{in[0]}, die von @code{hints} in @code{in[1]}
+und die der @var{n} Komponenten in @code{in[2]} bis @code{in[2 + @var{n-1}]}
+
+@node Implementation, Index, Blöcke erstellen mit libsim, Top
+@chapter Implementation
+
+@menu
+* Begriffe::                    
+@end menu
+
+@node Begriffe,  , Implementation, Implementation
+@section Begriffe
+
+[ausfüllen]
+
+@table @asis
+@item block
+@item formal
+@item interface
+@item component
+@item generic
+@item port
+@item signal
+@item specification
+@item behavioral
+@item structural
+@end table
+
+@node Index,  , Implementation, Top
+@unnumbered Index
+@printindex cp
+
+@contents
+@bye

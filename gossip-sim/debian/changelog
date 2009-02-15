@@ -1,0 +1,9 @@
+gossip-sim (0.8.2-1) unstable; urgency=low
+
+  * Initial Release.
+
+ -- Marius Vollmer <mvo@zagadka.de>  Fri,  4 Aug 2000 19:55:20 +0200
+
+Local variables:
+mode: debian-changelog
+End:

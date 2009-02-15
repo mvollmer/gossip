@@ -1,0 +1,12 @@
+;; -*- scheme -*-
+
+(use-library example *)
+
+(define (simulation value)
+  (signals sig)
+  (source :out sig :value value)
+  (destination :in sig))
+
+(do ((val 0 (1+ val)))
+    ((= val 5))
+  (sim-run simulation val))

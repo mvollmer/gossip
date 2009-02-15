@@ -1,0 +1,30 @@
+Read INSTALL to find out how to configure this package.
+
+This library contains a single block, "matlab", which can evaluate
+arbitrary Matlab commands.  Complex numbers are gathered on the input
+of the block and passed to the Matlab command in a matrix.  Likewise,
+a result matrix is channeled to the output port of the block.
+
+The included Makefile requires GNU make.
+
+
+Implementation
+--------------
+
+This block uses a rather complicated implementation.  We can't use the
+`engine' interface to Matlab, because the run-time requirements of
+libeng are incompatible with those of Gossip blocks (libeng requires
+libc5 while Gossip uses whatever is current on the platform).
+
+Additonally, I couldn't quite figure out how to build libc5 binaries
+on SuSE.
+
+Therefore, we add our C code to Matlab in the form of a `mex' function
+(I found a way to make this work).  We communicate with it thru a
+named Unix pipe.  The mex function takes over control of Matlab and
+uses it like an engine.
+
+For startup, we create a temporary directory and place a suitable
+"startup.m" file in it.  The name pipe will also be in this directory.
+The mex function will change back to the original directory before
+evaluating any commands.

@@ -1,0 +1,18 @@
+2001-10-11  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* matlabengine.c: Do not use "//" style comments.
+
+2000-12-08  Marius Vollmer  <marius.vollmer@uni-dortmund.de>
+
+	* Makefile, libmatengine.cc: Replace matlabengine.mexlx with
+	matlabengine.mexglx everywhere.
+
+	* matlab.cc (matlab::init): Cast NULLs to `const char*' in calls
+	to get.
+
+	* libmateng.cc (matlab_engine::matlab_engine): Use AF_UNIX instead
+	of AF_LOCAL.  Do not use SUN_LEN.
+
+	* matlabengine.c (mexFunction):  Use AF_UNIX instead
+	of AF_LOCAL.  Do not use SUN_LEN.
+

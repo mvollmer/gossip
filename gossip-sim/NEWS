@@ -1,0 +1,220 @@
+User visible changes in 0.9.1
+
+* Small changes for GCC 3.
+
+  Gossip should now work with GCC 3.x.
+
+* License has changed.
+
+  The exception has been removed from the license conditions.  Now
+  gossip-sim is plain GPL.  You can no longer distribute binary only
+  simulation blocks.
+
+User visible changes in 0.9.0
+
+* Guile 1.6.0 or later is required.
+
+  Gossip now depends on the 1.6.0 release of Guile.
+
+* Libraries now load "common.scm" automatically.
+
+  When there is a file called "common.scm" in one of the directories
+  of a library, it is loaded.  The definitions in it appear along with
+  the blocks in the library module.  You can import and rename them
+  with `use-library' as usual.
+
+* More 'sim_comp::get' variants.
+
+  You can now have generics that are "arrays of ints", "bool",
+  "unsigned int", "long", "unsigned long", "long long" and "unsigned
+  long long".
+
+* Simulations are stopped in a slightly different way.
+
+  When a SIGINT is received, the simulation will stop immediately, not
+  after a complete run of the schedule.  The function 'dynsim-stop'
+  has been removed; the notify handler should now return '#f' to
+  indicate that the simulation should be stopped.
+
+* There is only one scheduler.
+
+  The old "alt2" scheduler has been made the one and only scheduler.
+  The functions 'set-scheduler', 'set-schedule-combiner' and
+  'set-schedule-inflation' have been removed.
+
+  The scheduler now performs some simple peephole optimizations to
+  reduce the buffer space needed.
+
+* There is an experimental scheme for installing block documentation.
+
+  A block library can contain a file "html.index" that gives URLs for
+  documentation of the library and for each block.  The function
+  'sim-browse-doc' from the new module (gossip sim-doc) can interpret
+  this file and invoke netscape with the URL.
+
+  This feature needs to settle a bit and be documented.
+
+* There is an experimental 'net inspector'.
+
+  The function 'sim-inspect' can be called on components and signals
+  and will interactively walk the net that they form.
+
+  You can use '(sim-inspect-on-error #t)' in a simulation description
+  to have 'sim-inspect' be called automatically for a net that has
+  errors.
+
+* Bug fixes en mass.
+
+User visible changes in 0.8.2
+
+* New schedule combiner `smallest'
+
+  You can now issue
+
+    (set-schedule-combiner 'smallest)
+
+  in your simulation description, and the new schedule combiner
+  `smallest' will be used.  It will try to find a schedule that uses
+  smaller buffers.
+
+* Printing of nets is done earlier
+
+  If you have `(set-verbose #t)' active, the net will be printed
+  before it is being checked for unconnected signals.  This allows you
+  to see the net that contains the error.
+
+* Bug fixes in the scheduler
+
+  Earlier, the scheduler could fail to find a schedule for nets that
+  contain both delayed signals that form cycles, as well as delayed
+  signals that don't form cycles.  It would sometimes break the wrong
+  signals.
+
+  Likewise, it did not always compute the right buffer size for open
+  ports.  This would result in a segmentation violation.
+
+* Ported to Guile-1.4
+
+  Gossip-sim now works with Guile-1.4.
+
+* More generic types are supported.
+
+  You can now have generics that are a vector of doubles, or strings.
+
+* Always executes a complete schedule
+
+  The simulation is only stopped after a complete schedule has been
+  executed.  That is, when a source calls `finish', the data elements
+  it has produced will still reach their destinations.
+
+  Also, SIGINT is only reacted to after a complete schedule.
+
+  This is to make the termination of simulations more predictable.
+  You can still force a simulation to stop by typing three SIGINTS in
+  a row.
+
+* Signals can be terminated
+
+  In addition to connecting a port to `#f' to terminate oit, you can
+  now also connect a signal to `#f', causing the port that the signal
+  is connected to to be terminated indirectly.
+
+* Input ports can be terminated
+
+  Connecting an input port to `#f' (or to a signal that has been
+  connected directly or indirectly to `#f') will cause that port to
+  receive a constant stream of all-zero bits.
+
+* Various bug fixes
+
+  There were some bugs with multi-ports and setting their chunk sizes.
+
+User visible changes in 0.8.1
+
+* New function `connect-signals'.
+
+  You can now directly connect two signals by calling
+      
+    (connect-signals IN OUT)
+
+  This behaves like connecting IN to an input port and OUT to an
+  output port, and copying all data arriving at IN unchanged to OUT,
+  except no copying is actually done.
+
+* Function `sig' can now construct signals.
+
+  Calling `sig' with no arguments will construct a new signal, just
+  like `make-signal'.  Using `make-signal' is deprecated.
+
+* New macro `let-signals'.
+
+* Support for port terminators.
+
+  You can now specify `#f' as the signal when connecting an output
+  port.  This will cause the output port to drop all its data on the
+  floor.
+
+* Results are now handled more consistently.
+
+  You can now use a string, a symbol or a keyword to name a result
+  when retrieving it.
+
+* Specification of generics and results in C++ has changed incompatibly.
+
+  Generics and results no longer carry a type in their interface
+  description, and generics do not have their default value in the
+  interface.  There is now only one macro for declaring a generic,
+
+    SIM_GENERIC (name)
+
+  and one for results,
+
+    SIM_RESULT (name)
+
+  Macros like SIM_INT_GENERIC, SIM_DOUBLE_GENERIC have been removed.
+
+  The `get' functions of sim_comp no longer takes the (unused) FLAGS
+  argument.  Instead, they now take default values.  For example, to
+  declare a generic named `count' and later retrieve its value into a
+  `int' variable while using `10' as the default value, you would now
+  write code like this:
+
+    sim_generic generics[] = {
+      SIM_GENERIC ("count"),
+      NULL
+    };
+
+    ...
+
+    struct bla : sim_comp {
+  
+      int count;
+
+      void
+      init ()
+      { 
+        get (count, "count", 10);
+      }
+
+      ...
+    };
+
+  There are also `get' functions that do not have a default value
+  argument.  They throw errors when the user has not set the requested
+  generic.
+
+* The script gossip-run no longer munges the %load-path of Guile.  You
+  should make sure that Guile can find the installed Gossip modules.
+
+  If you install Gossip with the same prefix as Guile, everything
+  should be OK.  Otherwise you might want to set the environment
+  variable GUILE_LOAD_PATH to include the directory
+
+    <prefix>/share/guile
+
+  where <prefix> is the directory you gave to the --prefix option of
+  configure.
+
+  I made this change to encourage you to setup your system in a way
+  that the Gossip modules are *always* visible, not just when
+  gossip-run has done its magic with the %load-path.

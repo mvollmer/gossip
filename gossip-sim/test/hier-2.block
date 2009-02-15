@@ -1,0 +1,11 @@
+;; -*- scheme -*-
+
+(define (instantiate-hier-2 n block in out)
+  (if (= n 1)
+      (block :in in :out out)
+      (hier-1 :n (1- n) :block block :in in :out out)))
+  
+(define-block (hier-2 (= n 1) (= block) (<< in) (> out))
+  (instantiate-hier-2 n block in out))
+
+

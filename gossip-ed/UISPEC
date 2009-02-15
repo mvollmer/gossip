@@ -1,0 +1,73 @@
+User interface specification of gossip-ed-mockup
+------------------------------------------------
+
+- Gestures
+
+MOD-Press-N: button-press-event on target with button == N and MOD
+	   included in state.  When MOD == Any, state is not examined.
+
+Release-N: button-release-event anywhere with button == N any any
+   	   state.
+
+MOD-Click-N: MOD-press-N followed by release-N without moving,
+	   cancellable with any-press-3.  Any-press-3 will cancel
+	   immediatly, the following release-N and release-3 events
+	   have no effect.
+
+MOD-Drag-N:
+           MOD-press-N followed by motion followed by release-N,
+           cancellable with any-press-3.  Any-press-3 will cancel
+	   immediatly, the following release-N and release-3
+	   events have no effect.
+
+- Notification of Gestures
+
+MOD-Press-N, MOD-Release-N: immediate.
+
+MOD-Click-N: Upon release-N.  When cancelled, no notification
+           whatsoever is sent.  The cancelling press-3 event is not
+           notified.
+
+MOD-Drag-N: drag-start upon first motion event. drag-cancel when
+           cancelled.  drag-stop upon any-release-N when not
+           cancelled.  When cancelled before motion starts, no
+           notification is sent.  The cancelling press-3 event is not
+           notified.
+
+- Targets and state
+
+Tarets are comps, wires, blobs and none.  Target state is none,
+marked, or selected.  Target none (the background) always has state
+none.  Item is comp or wire or blob.  State marked includes state
+selected.
+
+- Behaviour
+
+Any-Press-3  on any/any: context menu.
+
+Drag-1       on none: marking by box.
+Ctrl-Drag-1  on none: ext-marking by box.
+Click-1      on none: unmark-all
+Ctrl-Click-1 on none: noop.
+
+Drag-1        on comp,blob/none: move
+Shift-Drag-1  on comp,blob/none: restricted move
+Drag-1        on comp,blob/marked: move-marked
+Shift-Drag-1  on comp,blob/marked: restricted move-marked
+
+Drag-1        on wire/none: move attached blobs
+Shift-Drag-1  on wire/none: split-wire-and-move
+Drag-1        on wire/marked: move-marked
+Shift-Drag-1  on wire/marked: restricted move-marked
+
+Click-1       on item/none: unmark-all, select item
+Ctrl-Click-1  on item/none: ext-select item
+Click-1       on item/marked: unmark-all, select item
+Ctrl-Click-1  on item/marked: unmark item
+
+Drag-2        on blob/any: place-wire
+Shift-Drag-2  on blob/any: place-wire (different wire type, later)
+
+Drag-2        on wire/any: place-blob-and-wire
+Shift-Drag-2  on wire/any: place-blob-and-wire
+Click-2       on wire/any: split-and-place-blob

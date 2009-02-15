@@ -1,0 +1,161 @@
+<!DOCTYPE html PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html>
+<head>
+<title>The GOSSIP Simulation Environment</title>
+</head>
+<body bgcolor="#FFFFFF" text="#000000" link="#1F00FF" alink="#FF0000" vlink="#9900DD">
+
+<center>
+<TABLE width="100%" border="0" cellspacing="0" cellpadding="0"><TR> <TD
+  align="left"><A href=http://sourceforge.net/><IMG
+  src="http://sourceforge.net/sflogo.php?group_id=4049&type=2"
+  width="88" height="31" border="0"></A></TD>
+
+  <TD align="right"> 
+
+<!-- http://sourceforge.net -->
+
+<A class=tabs href="http://sourceforge.net/project/?group_id=4049">
+<IMG src="http://sourceforge.net/images/ic/anvil24.png" alt="Summary" border="0" width="24"
+height="24"></A>
+
+<A href="http://gossip.sourceforge.net"> <IMG
+src="http://sourceforge.net/images/ic/home.png" alt="Homepage"
+border="1" border=0 width="24" height="24"></A>
+
+<A href="http://sourceforge.net/bugs/?group_id=4049"><IMG
+src="http://sourceforge.net/images/ic/bug.png" alt="Bug Tracking"
+border="0" border=0 width="24" height="24"></A>
+
+<A href="http://sourceforge.net/support/?group_id=4049"><IMG
+src="http://sourceforge.net/images/ic/support.png" alt="Support Manager" border="0" border=0
+width="24" height="24"></A>
+
+<A href="http://sourceforge.net/mail/?group_id=4049"><IMG
+src="http://sourceforge.net/images/ic/mail.png" alt="Mailing Lists" border="0" border=0
+width="24" height="24"></A>
+
+<A href="http://sourceforge.net/news/?group_id=4049"><IMG
+src="http://sourceforge.net/images/ic/news.png" alt="News" border="0" border=0 width="24"
+height="24"></A>
+
+<A href="http://sourceforge.net/cvs/?group_id=4049"><IMG
+src="http://sourceforge.net/images/ic/convert.png" alt="CVS Code Repository" border="0"
+border=0 width="24" height="24"></A>
+
+<A href="http://sourceforge.net/project/filelist.php?group_id=4049"><IMG
+src="http://sourceforge.net/images/ic/save.png" alt="Downloads"
+border="0" border=0 width="24" height="24"></A>
+
+</TD></TR> <TR><TD colspan="2"><IMG
+src="/images/blank.gif" height="4" width="1" border=0
+alt="blank.gif"></TD></TR> <TR bgcolor="#000000"><TD colspan="2"><IMG
+src="/images/blank.gif" height="2" width="1" border=0
+alt="blank.gif"></TD></TR>
+                </TABLE>
+
+</center>
+
+
+<br>
+<center>
+<img src=gossip-midi-color.png>
+<h1>The GOSSIP Simulation Environment</h1>
+</center>
+
+<blockquote>
+
+<p>
+The goal of the GOSSIP project is to develop and maintain a simulation
+environment for use primarily in communications engineering and
+digital signal processing.  It will be implemented as an extension to
+Guile, the Scheme implementation of the FSF.
+
+<p>
+<center>
+<b><font size=+1>
+<a href=install.html>Click here for installation instructions.</a>
+</font></b>
+</center>
+
+<p>
+The project consists of multiple parts:
+
+<ul>
+<li> <a href=gossip-sim.html>gossip-sim</a>, the simulation engine, in
+     its first version only for synchronous data flow.
+
+<li> <a href=gossip-libs.html>gossip-lib-*</a>, libraries of useful
+     simulation blocks.
+
+<li> <a href=gossip-ed.html>gossip-ed</a>, the schematic capture tool,
+     using <a href=http://www.gtk.org>Gtk+</a> and <a
+     href=http://www.ping.de/sites/zagadka/guile-gtk>guile-gtk</a>.
+
+<li> <a href=gossip-vhdl.html>gossip-vhdl</a>, extends gossip-sim to
+     be able to read VHDL files, using code from <a
+     href=http://www.freehdl.seul.org>FreeHDL</a>.
+</ul>
+
+<p>
+Please use the most excellent SourceForge <a
+href=https://sourceforge.net/project/?group_id=4049>summary page</a>
+for this project to learn more about 
+<a href=https://sourceforge.net/project/filelist.php?group_id=4049>
+releases</a>,
+<a href=https://sourceforge.net/cvs/?group_id=4049>
+anonymous CVS access</a>,
+<a href=https://sourceforge.net/mail/?group_id=4049>
+mailing lists</a>,
+<a href=https://sourceforge.net/bugs/?group_id=4049>
+bug tracking facilities</a>,
+and the latest
+<a href=https://sourceforge.net/news/?group_id=4049>
+news</a>.
+You might also be interested in the <a href=history.html>history</a>
+of GOSSIP.
+
+<p>
+The primary simulation description will be textual, by writing Scheme
+programs that are executed by gossip-sim.  Gossip-sim supports a
+hierarchical description and gossip-ed will be able to produce such
+hierarchical blocks from interactive graphical input.
+
+<p>
+Going beyond synchronous data flow (towards asynchronous data flow or
+discrete events) should not be prohibited by the simulation
+description, but providing the necessary simulation engines and the
+interaction between them has low priority (as far as the original
+GOSSIP author is concerned).
+
+<p>
+As of now, the gossip-sim part is useable and nearly feature complete
+for its 1.0 release, and there is a useable mockup of the gossip-ed
+schematic capture tool, but the other parts hardly exist.
+Documentation for gossip-sim is nearly complete, as well, and there is
+a tutorial for gossip-ed.
+
+<p>
+GOSSIP right now is and should remain a fairly simple but yet powerful
+tool.  It should not be a research platform for simulation techniques.
+The original author is no specialist in simulation techniques anyway
+and would welcome constructive comments about the existing simulation
+engine.
+
+<p>
+The individual parts have TODO files that further detail the intended
+future of the code.
+
+<p>
+The one to find the funniest/best expansion of "GOSSIP" (according to
+my taste) wins a free bottle of the <a
+href=http://www.dab.de/produkt/hoevels.html>best local beer</a>
+(according to my taste) shipped to his/her door.  Post your
+suggestions on the <a
+href=http://lists.sourceforge.net/mailman/listinfo/gossip-general>
+gossip-general</a> mailing list.
+
+</blockquote>
+
+</body>
+</html>

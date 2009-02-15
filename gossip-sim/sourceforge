@@ -1,0 +1,48 @@
+Purpose and Summarization
+-------------------------
+
+The goal of the GOSSIP project is to develop and maintain a simulation
+environment for use primarily in communications engineering.  It will
+be implemented as an extension to Guile, the Scheme implementation of
+the FSF.
+
+The project consists of multiple parts:
+
+    gossip-sim:   The simulation engine, in its first version only for
+                  synchronous data flow.
+
+    gossip-lib-*: Libraries of useful simulation blocks.
+
+    gossip-ed:    The schematic capture tool, using Gtk+.
+
+    gossip-vhdl:  Extends gossip-sim to be able to read VHDL files,
+                  using code from FreeHDL.
+
+The primary simulation description will be textual, by writing Scheme
+programs that are executed by gossip-sim.  Gossip-sim supports a
+hierarchical description and gossip-ed will be able to produce such
+hierarchical blocks from interactive graphical input.
+
+Going beyond synchronous data flow (towards asynchronous data flow or
+discrete events) should not be prohibited by the simulation
+description, but providing the necessary simulation engines and the
+interaction between them has low priority (as far as the original
+GOSSIP author is concerned).
+
+As of the time that GOSSIP was first checked into SourceForge, the
+gossip-sim part is useable and nearly feature complete for its 1.0
+release, but the other parts hardly exist.  Documentation for
+gossip-sim is nearly complete.
+
+GOSSIP right now is and should remain a fairly simple but yet powerful
+tool.  It should not be a research platform for simulation techniques.
+The original author is no specialist in simulation techniques anyway
+and would welcome constructive comments about the existing simulation
+engine.
+
+The individual parts have TODO files that further detail the intended
+future of the code.
+
+The one to find the funniest/best expansion of "GOSSIP" (according to
+my taste) wins a free bottle of the best local beer (according to my
+taste) shipped to his/her door.

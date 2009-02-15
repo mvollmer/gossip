@@ -1,0 +1,73 @@
+#! /bin/sh
+# Restart with -*- scheme -*-
+exec guile -s "$0" "$@"
+!#
+
+;; This is a simplistic configure script for use with GOSSIP block
+;; libraries.  If you want to do more, you should probably use
+;; autoconf instead.
+
+(use-modules (gossip sim-config)
+	     (ice-9 getopt-long)
+	     (ice-9 format))
+
+(define (help)
+  (for-each (lambda (str) (format (current-error-port) "~A\n" str))
+'("Usage: configure [options]"
+  "Options: [defaults in brackets after descriptions]"
+  "  --help                  print this message"
+  "  --version               print the version of this script"
+  "  --prefix=PREFIX         install architecture-independent files in PREFIX"
+  "                          [/usr/local]"
+  "  --exec-prefix=EPREFIX   install architecture-dependent files in EPREFIX"
+  "                          [same as prefix]"))
+  (exit 0))
+
+(define (version)
+  (format (current-error-port) "GOSSIP lib configure version 0.0\n"))
+
+(define (print-config lab val)
+  (format #t "~A = ~A\n" lab val))
+
+(define (get-build-info name)
+  (cdr (assq name %guile-build-info)))
+
+(define prefix #f)
+(define exec-prefix #f)
+
+(define (print-config-file file)
+  (catch #t
+    (lambda ()
+      (with-output-to-file file
+	(lambda ()
+	  (format (current-error-port) "Creating ~A\n" file)
+	  (display "## Automatically created by `configure'.  Do not edit.\n\n")
+	  (print-config "prefix" prefix)
+	  (print-config "exec-prefix" exec-prefix)
+	  (print-config "GOSSIP_BLOCK_LDFLAGS" sim-block-ldflags)
+	  (print-config "GOSSIP_CFLAGS" 
+			(string-append "-I" sim-prefix "/include"))
+	  (print-config "GUILE_CFLAGS"
+			(string-append "-I" 
+				       (get-build-info 'includedir))))))
+    (lambda args
+      (delete-file file)
+      (apply throw args))))
+
+(define options-grammar '((help)
+			  (version)
+			  (prefix (value #t))
+			  (exec-prefix (value #t))))
+
+(let ((opts (getopt-long (command-line) options-grammar)))
+  (define (opt sym def)
+    (let ((cell (assq sym opts)))
+      (if cell (cdr cell) def)))
+  (cond ((opt 'help #f)
+	 (help))
+	((opt 'version #f)
+	 (version))
+	(else
+	 (set! prefix (opt 'prefix "/usr/local"))
+	 (set! exec-prefix (opt 'exec-prefix prefix))
+	 (print-config-file "config.status"))))

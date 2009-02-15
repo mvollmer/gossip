@@ -1,0 +1,18 @@
+This is the IPL library.  It contains blocks that are used at the
+Information Processing Labratory.
+
+Sources
+
+  rand-uniform:  A source for uniformly distributed random numbers.
+  rand-normal:   A source for normally distributed random numbers.
+
+Type conversion
+
+  double-to-complex
+  complex-real
+  complex-imag
+
+  
+Read INSTALL to find out how to configure this package.
+
+The included Makefile requires GNU make.

@@ -1,0 +1,45 @@
+The usual way to build a Gossip block library consists of these steps:
+
+  1. `cd' to the directory containing the libraries's source code and type
+     
+	./configure --install=DIR
+
+     to configure the package for your system.  DIR is the directory
+     where you want the library to appear after installation.  The
+     installation process will create a subdirectory of DIR with the
+     name of the library and copy all blocks into that subdirectory.
+
+     For example, when the library is called `misc' and contains a
+     block named `foo', the directory `DIR/misc' will be created and
+     the block will be copied to `DIR/misc/foo.prim'.
+
+     To use the new library, you must make sure that DIR is in the
+     GOSSIP_SIM_LIBRARY_PATH environment variable.
+
+     Using `--install' is recommended for a `per-user' installation on
+     homogenous systems.  When you want to install a library
+     system-wide or on a heterogenous network with multiple
+     incompatible platforms, you might want to use `--prefix' and
+     `--exec-prefix' instead.
+
+     Running `configure' as
+
+        ./configure --prefix=PREFIX --exec-prefix=EXEC_PREFIX
+
+     will cause architecture independent blocks to be installed in
+     `PREFIX/share/gossip/sim/<libname>/' and architecture-dependent
+     blocks in `EXEC_PREFIX/libexec/gossip/sim/<libname>'.
+     EXEC_PREFIX defaults to PREFIX.
+
+     When `configure' is run with no options, it defaults to
+     `--prefix=/usr/local'.
+
+  2. Type `make' to compile the package.
+
+  3. Type `make install' to install the programs and any data files and
+     documentation.
+
+  4. You can remove the program binaries and object files from the
+     source code directory by typing `make clean'.  To also remove the
+     files that `configure' created (so you can compile the package for
+     a different kind of computer), type `make distclean'.

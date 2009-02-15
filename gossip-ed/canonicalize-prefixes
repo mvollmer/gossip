@@ -1,0 +1,156 @@
+#! /bin/sh
+# Written in 2000 by Marius Vollmer.
+# Public Domain.
+
+# canonicalize-prefixes -- reorder command line arguments and print
+# the result to stdout.
+# 
+# The reordering is done to bring the -L and -I compiler options into
+# a canonical order to avoid picking up wrong versions of libraries
+# and header files.
+# 
+# 
+# The Problem
+# -----------
+# 
+# For the sake of discussing the utility of this hack, consider three
+# packages: ME, FOO and BAR.  ME wants to use both FOO and BAR and
+# expects FOO and BAR to be already installed in the system when ME is
+# to be configured and build.  Further, both FOO and BAR come with
+# little programs, foo-config and bar-config, that provide
+# configuration information to other packages.
+# 
+# Now imagine we have this situation: both the FOO and BAR package
+# come with the OS and have been installed in /usr.  But the user has
+# also installed its own (newer) version of BAR in /home/fred.  He
+# wants ME to build with this newer version, of course.
+# 
+# The configure script of ME uses foo-config and bar-config to find
+# out how to link to libfoo (from FOO) and libbar (from BAR) and it
+# correctly finds:
+#
+#   foo-config says to use:   -L/usr/lib -lfoo
+#   bar-config says:          -L/home/fred/lib -lbar
+#
+# The ME package dutifully invokes the linker thus:
+#
+#   cc -o me me.o -L/usr/lib -lfoo -L/home/fred/lib -lbar
+# 
+# The problem with this is that the linker will pick up
+# /usr/lib/libbar instead of /home/fred/lib/libbar because /usr/lib is
+# first on the search path.
+# 
+# The only one who has enough information to get out of this dilemma
+# is Fred himself, because he has configured his system and knows what
+# prefixes he wants to use.
+# 
+# Thus, we need a way for Fred to tell the ME package that he wants
+# the linker to invoked in this fashion
+# 
+#   cc -o me me.o -L/home/fred/lib -L/usr/lib -lfoo -lbar
+# 
+# because he knows that he wants the /home/fred prefix to shadow the
+# /usr prefix.  (On the other hand, only ME knows that it wants to
+# have -lfoo precede -lbar.)
+# 
+# 
+# Solution
+# --------
+# 
+# The ME package can solve this problem by passing its compiler and
+# linker options thru this program, `canonicalize-prefixes'.  Fred can
+# set the environment variable SYSTEM_PREFIXES to control what it
+# does, or, when he has a standard system, accept the default.
+# 
+# Say, the configure script of ME has put the needed linker options
+# into $FOO_LIBS and $BAR_LIBS, respectively.  It can then find the
+# correct options for linking the `me' program like this
+# 
+#   ME_LIBS=`canonicalize-prefixes $FOO_LIBS $BAR_LIBS`
+# 
+# 
+# Details
+# -------
+# 
+# canonicalize-prefixes will move all "-L" and "-I" options to the
+# front and maybe change their order.  All other options will be
+# gathered at the end, in their original order.
+# 
+# The reordering of -L and -I options is determined by dividing their
+# argument directories into two classes: system and non-system
+# locations.  A system location is one that matches one of the
+# prefixes in the SYSTEM_PREFIXES environment variable.  All
+# directories are non-system locations.  The SYSTEM_PREFIXES variable
+# is a colon separated list of directory names.
+# 
+# In the final sequence, options with non-sytem locations will precede
+# the ones with system locations.  The non-system options will be in
+# their original order.  The system options will appear in the same
+# order as their prefix appears in SYSTEM_PREFIXES.  For deciding
+# which prefix belongs to a certain location when there are multiple
+# possible choices, the longest prefix is chosen.  When multiple
+# system options map to one prefix, the order among them is the same
+# as in the original sequence.
+# 
+# "-I" and "-L" options will retain their relative order.
+# 
+# When SYSTEM_PREFIXES is not set, its default value is
+#
+#   SYSTEM_PREFIXES="$HOME:/usr/local:/usr"
+#
+
+pfxs=${SYSTEM_PREFIXES-$HOME:/usr/local:/usr}
+
+locs=
+rest=
+prev=
+for option; do
+  if test -n "$prev"; then
+    eval "locs=\"$locs $prev$option\""
+    prev=
+    continue
+  fi
+
+  case "$option" in
+    -L) prev="-L";;
+    -L*) locs="$locs $option";;
+    -I) prev="-I";;
+    -I*) locs="$locs $option";;
+    *) rest="$rest$option " ;;
+  esac
+done
+
+# XXX - use an O(n^2) algorithm, not O(n^3).
+
+sys=
+nonsys=
+pos=0
+IFS=":"; for pfx in $pfxs; do
+  IFS=" "; for loc in $locs; do
+    locpos=0
+    bestpos=0
+    bestlen=0
+    issys=
+    IFS=":"; for p in $pfxs; do
+      if test -z "$p"; then continue; fi
+      if echo $loc | grep -q "^-[IL]$p"; then
+	len=`expr length $p`
+	if test $len -gt $bestlen; then
+	  bestpos=$locpos
+	  bestlen=$len
+	fi
+      fi
+      locpos=`expr $locpos + 1`
+    done
+    if test $bestlen = 0 -a $pos = 0; then
+      nonsys="$nonsys$loc "
+    else if test $bestpos = $pos; then
+      if echo $sys | grep -v -q -e "$loc "; then
+        sys="$sys$loc "
+      fi
+    fi fi
+  done
+  pos=`expr $pos + 1`
+done
+
+echo $nonsys$sys$rest

@@ -1,0 +1,84 @@
+dnl Process this file with autoconf to produce a configure script.
+AC_INIT(scm/sim.scm)
+AM_INIT_AUTOMAKE(gossip-sim, 0.9.1)
+
+dnl Checks for programs.
+AC_CANONICAL_HOST
+AC_PROG_CC
+AC_PROG_CXX
+AM_PROG_LIBTOOL
+
+GUILE_FLAGS
+
+AC_MSG_CHECKING(for guile version)
+guileversion=`guile-config info guileversion 2>/dev/null`
+if test -z "$guileversions"; then
+  # Hack for versions prior to 1.4
+  guileversion=`guile-config --version 2>&1 | sed 's/^.*1/1/'`
+fi
+set `echo $guileversion | tr '.' ' '`
+major=$1
+minor=$2
+AC_MSG_RESULT($major.$minor)
+
+if test $major = 1 -a $minor -lt 6; then
+  AC_MSG_ERROR([We need at least Guile version 1.6.0, but you don't seem to have it.])
+fi
+
+AC_MSG_CHECKING(whether guile-readline works)
+if guile -c "(use-modules (ice-9 readline))" 2>&5; then
+  AC_MSG_RESULT(yes)
+  GUILE_READLINE_WORKS="#t"
+else
+  AC_MSG_RESULT(no)
+  GUILE_READLINE_WORKS="#f"
+fi
+AC_SUBST(GUILE_READLINE_WORKS)
+
+saved_LDFLAGS="$LDFLAGS"
+saved_CFLAGS="$CFLAGS"
+LDFLAGS="$LDFLAGS $GUILE_LDFLAGS"
+CFLAGS="$CFLAGS $GUILE_CFLAGS"
+
+AC_CHECK_FUNCS(scm_num2ulong_long)
+
+LDFLAGS="$saved_LDFLAGS"
+CFLAGS="$saved_CFLAGS"
+
+myprefix="$prefix"
+myexec_prefix="$exec_prefix"
+test "x$myprefix" = xNONE && myprefix=$ac_default_prefix
+test "x$myexec_prefix" = xNONE && myexec_prefix=$myprefix
+AC_SUBST(myprefix)
+AC_SUBST(myexec_prefix)
+
+AC_MSG_CHECKING(how to build block programs)
+case $host_os in
+linux-gnu*)
+  GOSSIP_BLOCK_LDFLAGS="-shared -export-dynamic";;
+freebsdelf*)
+  GOSSIP_BLOCK_LDFLAGS="-shared -export-dynamic";;
+solaris*)
+  GOSSIP_BLOCK_LDFLAGS="-G -export-dynamic";;
+*)
+  GOSSIP_BLOCK_LDFLAGS="unknown";;
+esac
+if test "$GOSSIP_BLOCK_LDFLAGS" = unknown; then
+  AC_MSG_RESULT(no way) 
+  AC_MSG_ERROR(I don't know how to build block programs on $host_os.)
+else
+  AC_MSG_RESULT($GOSSIP_BLOCK_LDFLAGS)
+fi
+
+AC_SUBST(GOSSIP_BLOCK_LDFLAGS)
+
+AC_OUTPUT(Makefile
+          gossip/Makefile
+	  src/Makefile
+	  doc/Makefile
+	  scm/Makefile
+          scm/sim-config.scm
+          test/Makefile
+          example/Makefile
+	  example/cdma/Makefile)
+

@@ -1,0 +1,128 @@
+<!DOCTYPE html PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html>
+<head>
+<title>The GOSSIP Simulation Environment - gossip-sim</title>
+</head>
+<body bgcolor="#FFFFFF" text="#000000" link="#1F00FF" alink="#FF0000" vlink="#9900DD">
+<center>
+<img src=gossip-small-color.png>
+<h2><a href=index.html>The GOSSIP Simulation Environment</a></h2>
+<h1>gossip-sim</h1>
+</center>
+
+<blockquote>
+
+<p>
+The module <samp>gossip-sim</samp> is the core member of the GOSSIP
+environment.  It is the engine that carries out the simulations, given
+Scheme programs as input.
+
+<p>
+<ul>
+<li><a href=gossip-sim.html#Overview>Overview</a>
+<li><a href=gossip-sim.html#Documentation>Documentation</a>
+</ul>
+
+<h3><a name="Overview">Overview</h3>
+
+<p>
+Simulations are described as <em>nets</em> of <em>components</em>.
+The components are connected via <em>signals</em>.  A component has
+<em>ports</em> that can accept the signals.  While executing the
+simulation, a component receives data at its input ports and produces
+new data at its output ports (which in turn travels thru a signal to
+the input port of another component).  A component must specify how
+much data it expects at each of its input ports and how much it
+produces at each output port once enough data has arrived.  These
+sizes must remain constant during the whole simulation.  The
+simulation engine takes care of scheduling all components in the right
+order.
+
+<p>
+Components are created by <em>instantiating</em> <em>blocks</em>.  A
+specific block is a blueprint of all components that perform the same
+kind of function.  While instantiating a block you can specify values
+for the <em>generics</em> of the block.  The generics are parameters
+that influence the behaviour of the resulting components.  Each
+component has its own, independent set of values for the generics of
+its block.  Blocks can be organized into <em>libraries</em>, but they
+don't have to be.
+
+<p>
+There are two general kinds of blocks, and correspondingly two general
+kinds of components: <em>primitive</em> ones and
+<em>hierarchical</em> ones.  A primitive component is one that
+actually takes part in the final simulation.  It contains executable
+code that gets run whenever enough data has arrived at its input ports
+and there is room in its output buffer.  A hierarchical component on
+the other hand contains code to instantiate sub-components inside
+itself.  Ultimately, there will be a net of primitive components that
+can be executed in concert.  Thus, primitive components will do the
+real simulation work, while hierarchical components are a tool for
+organizing the net of primitive components.
+
+<p>
+The data itself that is transported via the signals consists of just
+bits, as far as the simulation engine is concerned.  It is up to the
+primitive components to interpret these bits.  There is support for
+checking that connected components will interpret these bits in the
+same way, however.  There is also support for easily writing primitive
+blocks that work with complex numbers, or integers of up to 32 bits.
+
+<p>
+Ports can be declared to be <em>multi ports</em>.  A multi port can
+accept any number of signals that are then treated individually by the
+component.  It is, for example, possible to implement a
+<samp>sum</samp> block with a multi port as its sole input and a
+normal port as its output.  When instantiated, the resulting component
+would then query how much signals are actually connected to the input
+and add them all up.
+
+<p>
+The simulation system is targeted at simulations that contain
+relatively few components with relatively rich behaviour.  In a
+typical use, you might have a couple of hundreds components that do
+things like matrix multiplications or factorizations, implement radio
+transmission channel models, adaptively filter a digital signal, or
+something on that scale.  There might also be lesser components that
+do multiplications or additions, but it wont probably be efficient to
+simulate gate-level designs that consist of hundred thousands of
+individual nand gates.
+
+<p>
+Gossip-sim itself is implemented in two coarse layers.  The upper
+layer that is responsible for building the simulation net from user
+input, checking its validity and finding a suitable schedule for the
+primitive components, is written in Guile Scheme.  The lower layer
+that is responsible for actually carrying out the simulation is
+written in C++.
+
+<p>
+The consequence of this is that hierarchical blocks are written in
+Scheme. The top-level user specification of the simulation net is
+written in Scheme, too, as it can be seen as a special purpose
+hierarchical block.  Primitive blocks are written in C++ and loaded
+into the simulation as shared libraries.
+
+<p>
+When describing the layout of your simulation net, you are in effect
+writing a Scheme program and consequently you can use all features of
+Scheme.  This gives you a considerable flexible, much more than you
+would get from more special purpose languages like VHDL, for example.
+
+<h3><a name="Documentation">Documentation</h3>
+
+<p>
+The source for the <samp>gossip-sim</samp> manual is included in the
+distribution.  It is available here in a variety of formats:
+
+<ul>
+<li><a href="docs/gossip-sim.html">html</a>
+<li><a href="docs/gossip-sim.pdf">pdf</a>
+<li><a href="docs/gossip-sim.ps.gz">ps.gz</a>
+</ul>
+
+</blockquote>
+
+</body>
+</html>

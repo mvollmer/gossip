@@ -1,0 +1,57 @@
+Subject: Announcing: The GOSSIP Simulation Environment
+Newsgroups: comp.simulation, comp.dsp, comp.lang.scheme
+To: guile@sourceware.cygnus.com, gossip-general@lists.sourceforge.net
+
+I'm happy to announce that the GOSSIP project is now hosted on
+SourceForge and thus is easily accessible to the general public, with
+all the things you expect from such a project: anonymous CVS, mailing
+lists, bug tracking, etc.  Go to:
+
+    http://gossip.sourceforge.net
+
+Excerpts from that page:
+
+    The goal of the GOSSIP project is to develop and maintain a
+    simulation environment for use primarily in communications
+    engineering and digital signal processing.  It will be implemented
+    as an extension to Guile, the Scheme implementation of the FSF.
+
+    The project consists of multiple parts:
+
+    * gossip-sim, the simulation engine, in its first version only for
+      synchronous data flow.
+
+    * gossip-lib-*, libraries of useful simulation blocks.
+
+    * gossip-ed, the schematic capture tool, using Gtk+ and guile-gtk.
+
+    * gossip-vhdl, extends gossip-sim to be able to read VHDL files,
+      using code from FreeHDL.
+
+    The primary simulation description will be textual, by writing
+    Scheme programs that are executed by gossip-sim.  Gossip-sim
+    supports a hierarchical description and gossip-ed will be able to
+    produce such hierarchical blocks from interactive graphical input.
+
+    As of now, the gossip-sim part is useable and nearly feature
+    complete for its 1.0 release, but the other parts hardly exist.
+    Documentation for gossip-sim is nearly complete, as well.
+
+    GOSSIP right now is and should remain a fairly simple but yet
+    powerful tool.  It should not be a research platform for
+    simulation techniques.  The original author is no specialist in
+    simulation techniques anyway and would welcome constructive
+    comments about the existing simulation engine.
+
+GOSSIP has been developed on and off during the recent years without
+`going public' with it.  I think it is now in a state that more people
+can benefit from it and, equally important, I think that GOSSIP now
+can benefit from more people working on it.
+
+Yesterday, gossip-sim has made its first alpha release (0.8.0).  I
+hope that people will find it useful and promising enough to want to
+hack on it themselves.
+
+Have fun!
+
+- Marius

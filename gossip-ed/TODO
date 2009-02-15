@@ -1,0 +1,25 @@
+Mockup
+------
+
+- Release gossip-ed-0.1
+  - release gossip-sim-0.8.1
+  - release guile-gtk-0.18
+
+- Make wires easier to hit
+- Emit exit conditions
+- GUI for changing GOSSIP_SIM_LIBRARY_PATH
+- Panner in "Zoom" tab.
+- Provide `unlimited' canvas space.
+- Undo
+- Passive decorations like text, lines, circles...
+
+- Run simulations in new process
+- Handle generics and results when running a testbench.
+- Better error reporting
+- Copy/Paste/Replace of blocks
+- Omnipresent signals like clock
+
+
+Done
+----
+- Provide access to block documentation, especially port types.

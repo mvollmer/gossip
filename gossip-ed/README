@@ -1,0 +1,65 @@
+README for gossip-ed version 0.5
+--------------------------------
+
+This is going to be the schematic editor of the Gossip simulation
+environment.  The plan is to write most of it in Scheme, using a
+customized version of the GnomeCanvas widget for the display.  We do
+not use GnomeCavas directly because I don't want to have too many
+dependencies on external, rapidly evolving packages.  We wont likely
+be using the anti-aliased stuff from Raph, as cool as it is.  The
+weight for this schematic editor is on fast, informative display that
+works well over the wire, and not on the prettiest possible WYSIWIG.
+
+For textual labels, I think we can settle for mock-zooming.  That is,
+we have a font in a (small) number of different sizes, and we use the
+size that works best at a certain zoom level.  When the text is too
+small, it is greeked; when it gets too large, we simply use the
+largest font.  This scheme might actually work better than trying to
+do true zooming.  My favorite font would be lucidasans, which should
+be available in sizes 8, 10, 12, 14, 18, 24 with every X11
+installation.
+
+The mockup is now useable.  Be sure to read the tutorial in doc/.
+
+
+User customization
+------------------
+
+On startup, gossip-ed-mockup will load "~/.gossip/edrc" if it exists.
+Some useful functions to call from this file:
+
+ - add-button LABEL PROC
+
+   Add a button with text LABEL to the GUI.  When it is clicked PROC
+   is called (with no arguments).
+
+ - save-to-file
+
+   Saves the current schematic
+
+ - save-to-file-ask
+
+   Ask foir a filename, then saves.
+
+ - load-from-file FILE
+
+   Load schematic FILE into the editor.
+
+ - run-testbench
+
+   Start a simulation of the current schematic.
+
+ - refresh-libraries
+
+   Refresh the library display.
+
+
+and many more.  Use the source, Luke
+
+Example edrc file:
+
+    (define (save-and-run)
+      (save-to-file)
+      (run-testbench))
+
+    (add-button "Save & Run" save-and-run)

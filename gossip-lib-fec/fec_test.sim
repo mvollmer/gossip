@@ -1,0 +1,88 @@
+;; -*- scheme -*-
+ 
+(use-modules (ice-9 format))
+
+(use-library fec *)
+(use-library misc *)
+(use-library iss *)
+
+(define (sim vnoise)
+  (signals a b c d psk 
+ham ham_raw ham_encoded ham_premod ham_psk ham_noise  ham_demod ham_demod7 ham_decoded 
+bch bch_raw bch_encoded bch_premod bch_psk bch_noise  bch_demod bch_demod15 bch_decoded
+golay golay_raw golay_encoded golay_premod golay_psk golay_noise  golay_demod golay_demod15 golay_decoded
+)
+
+  (random-bits :out a)
+
+  (modulate :in a :out b)
+  (awgn :in b :out c :rms_voltage vnoise)
+  (demodulate :in c :out d)
+  (block-ber :name "psk" :sent a :received d :count 100000)
+
+  (b2b :in a :out ham_raw :in-width 1 :out-width 4)
+  (hamming7enc :in ham_raw :out ham_encoded)
+  (b2b :in ham_encoded :out ham_premod :in-width 7 :out-width 1)
+  (modulate :in ham_premod :out ham_psk)
+  (awgn :in ham_psk :out ham_noise :rms_voltage (* (sqrt (/ 7 4)) vnoise))
+  (demodulate :in ham_noise :out ham_demod)
+  (b2b :in ham_demod :out ham_demod7 :in-width 1 :out-width 7)
+  (hamming7dec :in ham_demod7 :out ham_decoded)
+  (b2b :in ham_decoded :out ham :in-width 4 :out-width 1)
+  (block-ber :name "ham" :sent a :received ham :count 1000000)
+
+  (b2b :in a :out golay_raw :in-width 1 :out-width 12)
+  (golay_enc :in golay_raw :out golay_encoded)
+  (b2b :in golay_encoded :out golay_premod :in-width 24 :out-width 1)
+  (modulate :in golay_premod :out golay_psk)
+  (awgn :in golay_psk :out golay_noise :rms_voltage (* (sqrt 2) vnoise))
+  (demodulate :in golay_noise :out golay_demod)
+  (b2b :in golay_demod :out golay_demod15 :in-width 1 :out-width 24)
+  (golay_dec :in golay_demod15 :out golay_decoded)
+  (b2b :in golay_decoded :out golay :in-width 12 :out-width 1)
+  (block-ber :name "golay" :sent a :received golay :count 1000000)
+
+  (b2b :in a :out bch_raw :in-width 1 :out-width 7)
+  (bch_enc :in bch_raw :out bch_encoded)
+  (b2b :in bch_encoded :out bch_premod :in-width 15 :out-width 1)
+  (modulate :in bch_premod :out bch_psk)
+  (awgn :in bch_psk :out bch_noise :rms_voltage (* (sqrt (/ 15 7)) vnoise))
+  (demodulate :in bch_noise :out bch_demod)
+  (b2b :in bch_demod :out bch_demod15 :in-width 1 :out-width 15)
+  (bch_dec :in bch_demod15 :out bch_decoded)
+  (b2b :in bch_decoded :out bch :in-width 7 :out-width 1)
+  (block-ber :name "bch" :sent a :received bch :count 1000000)
+
+  (epilog 
+    (pk (format "results ~a ~a ~a ~a ~a"  (* -10 (log10 (* 2 (* vnoise vnoise)))) 
+(result "psk" "ber")
+(result "ham" "ber")
+(result "bch" "ber")
+(result "golay" "ber")
+))
+
+    (pk (format "EbN0  ~a" (* -10 (log10 (* 2 (* vnoise vnoise))))))
+    (pk (format "PSK  ~a" (result "psk" "ber")))
+    (pk (format "HAM  ~a" (result "ham" "ber")))
+    (pk (format "BCH  ~a" (result "bch" "ber")))
+    (pk (format "Golay  ~a" (result "golay" "ber")))
+))
+
+(define (range_log start stop step)
+  (do ((i start (* i step))
+     (lst '()(cons i lst)))
+   ((> i stop)(reverse! lst))))
+
+(define (range start stop step)
+  (do ((i start (+ i step))
+     (lst '()(cons i lst)))
+   ((> i stop)(reverse! lst))))
+
+(call-with-output-file "fec.dat"
+  (lambda (port)
+    (for-each (lambda (vnoise)
+      (let ((ber (sim-run sim vnoise)))
+        (format port "~a ~a~%" (* -10 (log10 (* 2 (* vnoise vnoise)))) ber)))
+      (range_log .2 1 (sqrt 1.05925)))))
+;;      (range 0 10 .1))))
+

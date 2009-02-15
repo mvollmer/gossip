@@ -1,0 +1,62 @@
+;; -*- scheme -*-
+
+(use-modules (ice-9 format))
+
+(use-library work *)
+
+(set-verbose #f)
+
+(define spreading-factor 16)
+
+(define (simulation snr n-inter)
+
+  (define-block (interferer (> out))
+    (signals a b c d)
+    (random-bits :out a)
+    (modulate :in a :out b)
+    (random-bits :out c)
+    (modulate :in c :out d)
+    (spread :in b :spread-seq d :out out :factor spreading-factor))
+
+  (signals a b c d e f g h ee (interference :bus n-inter))
+
+  (random-bits :out a)
+  (modulate :in a :out b)
+
+  (random-bits :out c)
+  (modulate :in c :out d)
+
+  (spread :in b :spread-seq d :factor spreading-factor :out e)
+
+  (for-each (lambda (s) (interferer :out s))
+	    interference)
+
+  (add :in e :out ee :in interference)
+  (awgn :in ee :out f :snr snr :factor 0.5 :signal-power spreading-factor)
+
+  (despread :in f :spread-seq d :factor spreading-factor :out g)
+
+  (demodulate :in g :out h)
+  (block-ber :name "block-ber" :sent a :received h :count 10000)
+
+  (epilog
+   (pk (result "block-ber" "ber"))))
+
+(define (range start stop step)
+  (do ((i start (+ i step))
+       (lst '() (cons i lst)))
+      ((> i stop) (reverse! lst))))
+
+(call-with-output-file "cdma.dat"
+  (lambda (port)
+    (for-each (lambda (n-inter)
+		(let ((ber (sim-run simulation 10 n-inter)))
+		  (format port "~a ~a~%" n-inter ber)))
+	      (range 0 14 1))))
+
+(call-with-output-file "cdma.cmd"
+  (lambda (port)
+    (format port "set logscale y~%")
+    (format port "plot \"cdma.dat\"~%")))
+
+(system "gnuplot -persist cdma.cmd")

@@ -1,0 +1,107 @@
+<!DOCTYPE html PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html>
+<head>
+<title>The GOSSIP Simulation Environment - History</title>
+</head>
+<body bgcolor="#FFFFFF" text="#000000" link="#1F00FF" alink="#FF0000" vlink="#9900DD">
+<center>
+<img src=gossip-small-color.png>
+<h2><a href=index.html>The GOSSIP Simulation Environment</a></h2>
+<h1>History</h1>
+</center>
+
+<blockquote>
+
+<p>
+Although it is in one way brand new, GOSSIP already has quite a
+history.  There probably isn't any code left from previous
+incarnations, but a lot of the early design decisions still influence
+the current implementation.
+
+<p>
+In its former life, GOSSIP wasn't called GOSSIP, of course.  It was
+called <tt>sim</tt>.  It was started while I (Marius) was working as a
+student at the <a
+href=http://www-kt.e-technik.uni-dortmund.de/indexe.html>Institute for
+Communication Technology</a>.  The initiator was Thorsten Herfet and
+the project was further nurtured by Thorsten Tödtmann.  Thorsten
+T. wrote lots of code and made lots of poor students use the tool.
+There is still a <a
+href=http://www-kt.e-technik.uni-dortmund.de/m_tm/sim.html>web
+page</a> about the old <tt>sim</tt>.  I don't know if they are still
+using it.
+
+<p>
+The journey from nothing to <tt>sim</tt> and from <tt>sim</tt> to
+GOSSIP was roughly like this: Naturally, the institute was doing
+simulations of their communications systems, and they wanted to have a
+tool to facilitate this.  The tool should allow the composition of
+independently developed programs, and allow only strictly controlled
+communication between these components.  Restricting the communication
+was desired so that one could be fairly sure that no information
+reached a component that wouldn't reach it in the real system.  The
+components should run in separate processes, so that it was easy to
+point fingers when one component caused a crash.  Of course,
+components were written in C or C++, and even ever so small bugs in
+these languages cause a program to fall over in obscure and
+unintelligible ways, so having a simulation crash due to a faulty
+component happened quite often.
+
+<p>
+The original <tt>sim</tt> thus consisted of a C++ API that people were
+supposed to write their components against.  This API was implemented
+by a library and each component was compiled into a separate
+executable.  There was a control program that could interpret a
+simple description language.  This control program would start all
+needed programs and connect them via Unix pipes.  Communication
+between the components would happen over these pipes.
+
+<p>
+Of course, performance sucked big time and the description language
+quickly became inadequate because it didn't have any `advanced'
+features like arithmetic expressions or loops.
+
+<p>
+My recollection is hazy about what happened next in what sequence, but
+<tt>sim</tt> moved from putting components into processes to linking
+them as shared libraries (without changing the API significantly!),
+and we made it use TCL as the description language instead of our home
+grown one.
+
+<p>
+Around that time, RMS launched the <i>"Why you should not use TCL"</i>
+debate, and indeed, we have found that it was quite easy to reach
+TCL's limitations.  I tried to write a static scheduler in TCL to
+speed up the execution of typical simulations, but I nearly lost all
+my hair over this.  So, in a fit of <i>Do the Right Thing</i>, I
+decided to replace TCL with the Scheme implementation <a
+href=http://www.gnu.org/software/guile>Guile</a>.  I have not
+regretted it since.  Almost all of the control program is now written
+in Scheme, including a static scheduler, and the description language
+is Scheme, too.
+
+<p>
+Like it is in a University setting, people moved on to other tasks,
+and maintainance of <tt>sim</tt> languished.  However, recently, I had
+to use a certain <a
+href=http://www.synopsys.com/products/dsp/dsp.html>proprietary stream
+driven simulator</a>, and it annoyed me greatly.  I thought I could do
+better than that, because in some senses <tt>sim</tt> already was
+better.
+
+<p>
+I decided to return to <tt>sim</tt> and make it into a usable piece
+of software that is superior to proprietary tools simply by being <a
+href=http://www.gnu.org/philosophy/free-sw.html>Free Software</a>.
+
+<p>
+The old <tt>sim</tt> lacked some important features, like feedback
+loops, delays, a clean way to manage libraries of components, and a
+good name.  So I decided to redo most of <tt>sim</tt> incrementally,
+and published the result on Sourceforge as the GOSSIP project.  I hope
+that enough people will find it useful to keep it alive.
+
+</blockquote>
+
+</body>
+</html>

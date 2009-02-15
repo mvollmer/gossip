@@ -1,0 +1,13 @@
+This is an example how you might organize the sources for a Gossip
+library distribution.  It does not contain any interesting blocks
+itself, but it has enough infrastructure to make writing and
+installing blocks easy.
+
+You should copy this directory and rename it to a more appropriate
+name.  Modify the Makefile to reflect your library, according to the
+instructions contained therein.  Then replace this README with a more
+appropriate one for your library.
+
+Read INSTALL to find out how to configure this package.
+
+The included Makefile requires GNU make.

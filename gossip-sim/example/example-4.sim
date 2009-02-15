@@ -1,0 +1,21 @@
+;; -*- scheme -*-
+
+(set-verbose #t)
+ 
+(use-library example *)
+
+(define-block (impulse-source (= value 1.0) (> out))
+  (signals a b)
+  (source :out a :value value)
+  (source :out b :value (- value))
+  (adder :in a 
+	 :in (sig b :delay 1) 
+	 :out out))
+
+(signals a b)
+(impulse-source :out a :value 1.0)
+(adder :in a 
+       :in (sig b :delay 1) 
+       :in (sig b :delay 2) 
+       :out b)
+(destination :in b :count (arg 0 20))

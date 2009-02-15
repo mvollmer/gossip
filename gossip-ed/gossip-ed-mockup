@@ -1,0 +1,3079 @@
+#! /bin/sh
+# restart with -*- scheme -*-
+exec guile -s "$0" "$@"
+!#
+
+;; gossip-ed - schematic entry
+;;  
+;; Copyright (C) 2000  Marius Vollmer
+;;  
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 2 of the License, or
+;; (at your option) any later version.
+;;  
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;  
+;; You should have received a copy of the GNU General Public License
+;; along with this program; if not, write to the Free Software
+;; Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+;;; Mockup for gossip schematic editor
+
+;; I figured that it is important for a project like Gossip to have a
+;; graphical frontend from the start.  So I decided to whip up a quick
+;; demonstration of concept in order to have something to show to the
+;; people.
+;;
+;; Chances are that this hack will be around longer than I would like
+;; to...
+
+(debug-enable 'debug)
+(debug-enable 'backtrace)
+(read-enable 'positions)
+(read-set! keywords 'prefix)
+
+(define-module (gossip mock-ed-mediator)
+  :use-module (gossip sim-library)
+  :use-module (gossip sim-net)
+  :use-module (gossip sim))
+
+(define-macro (re-export-with-prefix prefix . names)
+  `(begin
+     ,@(map (lambda (n)
+	      `(begin (export ,(symbol-append prefix n))
+		      (define ,(symbol-append prefix n) ,n)))
+	    names)))
+
+(re-export-with-prefix sim-
+		       find-library library-exports find-library-file
+		       block-interface port? port-dir port-multi? formal-name
+		       load-block result set-epilog primitive-block?
+		       make-net comp-name comp-block comp-children block-name)
+
+(re-export sim-library-path sim-run sim-inspect)
+
+(define-module (gossip mock-ed)
+  :use-module (gtk gtk)
+  :use-module (gtk gdk)
+  :use-module (gossip canvas)
+  :use-module (gossip mock-ed-mediator)
+  :use-module (oop goops)
+  :use-module (gossip sim-doc)
+  :use-module (gossip sim-builtin)
+  :use-module (ice-9 debug)
+  :use-module (ice-9 common-list)
+  :use-module (ice-9 optargs))
+
+;; Utilities
+
+(defmacro define-struct (name base-and-options . fields)
+  (define (field-name f)
+    (if (list? f) (car f) f))
+  (define field-defaulted? list?)
+  (define field-default cadr)
+  (define (accessors)
+    (map (lambda (f)
+	   (symbol-append name '- (field-name f)))
+	 fields))
+  (define (field->slot f)
+    (let ((fn (field-name f)))
+      ;; XXX - keep synchronized with copy-struct below
+      `(,fn :accessor ,(symbol-append name '- fn)
+	    :init-keyword ,(symbol->keyword fn)
+	    ,@(if (field-defaulted? f) 
+		  `(:init-value ,(field-default f)) 
+		  '()))))
+  (let loop ((base '())
+	     (bo base-and-options))
+    (if (or (null? bo) (keyword? (car bo)))
+	`(begin
+	   ;; (export ,name ,@(accessors) ,(symbol-append name '?))
+	   (define-class ,name ,(reverse! base) 
+	     ,@(map field->slot fields)
+	     ,@bo)
+	   (define (,(symbol-append name '?) x) (is-a? x ,name)))
+	(loop (cons (car bo) base) (cdr bo)))))
+
+;; Globals
+
+(define +floating-comp-color+ "#80FF80")
+(define +sensitive-comp-color+ "#80FF80")
+(define +comp-color+ "#50FF50")
+(define +blob-color+ "#FF5050")
+(define +sensitive-blob-color+ "#FF8080")
+(define +connected-blob-color+ "#000000")
+(define +transparent-blob-color+ "")  ; "#D0D0D0")
+(define +semi-transparent-blob-color+ "#000000")
+(define +blob-radius+ 3)
+
+(define +zoom-font-names+ '("lucidasans-8"
+			    "lucidasans-10"
+			    "lucidasans-12"
+			    "lucidasans-14"
+			    "lucidasans-18"
+			    "lucidasans-24"))
+
+(define +zoom-fonts+ (list->vector
+		      (map gdk-font-intern +zoom-font-names+)))
+
+;(define +zoom-fonts+ (list->vector +zoom-font-names+))
+
+(define +large-font+ 3)
+(define +medium-font+ 2)
+(define +small-font+ 1)
+
+(define *toplevel* #f)
+(define *canvas* #f)
+(define *block-list* #f)
+(define *libs-list* #f)
+(define *generics* #f)
+(define *sheet-list* #f)
+(define *statusbar* #f)
+(define *statusbar-context* #f)
+
+(define *libraries* '())
+
+(define *components* '())
+(define *blobs* '())
+(define *wires* '())
+
+(define *sheet* #f)
+(define *props* #f)
+
+(define *show-blobs* #f)
+
+;;; We have to be careful when destroying canvas items.  Once we have
+;;; called gtk-destroy on them, we can no longer do anything with them
+;;; or else the canvas will crash on us.
+
+(define-macro (destroy-item! loc)
+  (let ((item (gensym)))
+    `(let ((,item ,loc))
+       (if ,item (gtk-object-destroy ,item))
+       (set! ,loc #f))))
+
+;; A sheet gets dirty when it is not virtual and:
+;;
+;; - components move
+;; - components are added
+;; - components have their props changed
+;; - components are deleted
+;; - blobs move
+;; - blobs are added
+;; - blobs are deleted
+;; - the zoom changes
+
+(define (dirty!)
+  (if (and *sheet* (not (virtual-sheet? *sheet*)))
+      (cond ((not (sheet-dirty *sheet*))
+	     (set! (sheet-dirty *sheet*) #t)
+	     (gto-list-refresh-labels *sheet-list*)))))
+
+(define-generic commit)
+
+;;; Selection
+
+;; There is a selected thing and a list of marked things.  The
+;; selected thing is always a marked thing as well.  The selected
+;; thing has its properties displayed, while the marked things are
+;; affected by operations like move/copy/paste.
+;;
+;; The symbol of a thing is notified about its selection/marked state
+;; via the selection-notify generic function.
+
+(define *selected-thing* #f)
+(define *marked-things* '())
+
+(define-generic selection-notify)
+
+(define (select-thing thing ext)
+  (cond
+   ((not ext)
+    (unmark-all))
+   (*selected-thing*
+    (selection-notify *selected-thing* 'marked)))
+  (set! *marked-things* (cons thing (delq! thing *marked-things*)))
+  (set! *selected-thing* thing)
+  (selection-notify thing 'selected))
+
+(define (mark-thing thing)
+  (cond
+   ((not (memq thing *marked-things*))
+    (set! *marked-things* (cons thing *marked-things*))
+    (selection-notify thing 'marked))))
+
+(define (unselect-thing thing)
+  (cond
+   ((memq thing *marked-things*)
+    (selection-notify thing 'none)
+    (set! *marked-things* (delq! thing *marked-things*))
+    (if (eq? *selected-thing* thing)
+	(set! *selected-thing* #f)))))
+
+(define (unmark-all)
+  (for-each (lambda (thing)
+	      (selection-notify thing 'none))
+	    *marked-things*)
+  (set! *marked-things* '())
+  (set! *selected-thing* #f))
+
+(define (select-from-box x0 y0 x1 y1 ext)
+  (if (not ext)
+      (unmark-all))
+  (if (and (< x0 x1) (< y0 y1))
+      (for-each (lambda (c)
+		  (if (floater-hit c x0 y0 x1 y1)
+		      (mark-thing c)))
+		(append *components* *blobs* *wires*))))
+
+(define (inside? x0 y0 x1 y1 x y)
+  (and (< x0 x x1) (< y0 y y1)))
+
+;; Libraries and blocks
+
+(define-struct gto-list ()
+  (widget #f)
+  (list-widget #f)
+  (columns 1)
+  (items '()))
+
+(define-generic list-labels)
+(define-generic list-label)
+(define-generic list-selected)
+(define-generic list-unselected)
+
+(define-method (list-labels obj)
+  (vector (list-label obj)))
+
+(define-method (list-label obj)
+  "<no label>")
+(define-method (list-label (str <string>))
+  str)
+
+(define-method (list-selected obj)
+  #f)
+
+(define-method (list-unselected obj)
+  #f)
+
+(define (gto-list-refresh l)
+  (let ((w (gto-list-list-widget l)))
+    (gtk-clist-freeze w)
+    (gtk-clist-clear w)
+    (for-each (lambda (i)
+		(gtk-clist-append w (list-labels i)))
+	      (gto-list-items l))
+    (gtk-clist-columns-autosize w)
+    (gtk-clist-thaw w)))
+
+(define (gto-list-refresh-labels l)
+  (let ((w (gto-list-list-widget l)))
+    (do ((i (gto-list-items l) (cdr i))
+	 (r 0 (1+ r)))
+	((null? i))
+      (do ((c 0 (1+ c)))
+	  ((= c (gto-list-columns l)))
+	(gtk-clist-set-text w r c (vector-ref (list-labels (car i)) c))))
+    (gtk-clist-columns-autosize w)))
+
+(define (gto-list-clear-selection l)
+  (gtk-clist-unselect-all (gto-list-list-widget l)))
+
+(define (gto-list-set-selection-mode l m)
+  (gtk-clist-set-selection-mode (gto-list-list-widget l) m))
+
+(define-method (initialize (self gto-list) args)
+  (next-method)
+  (let ((s (gtk-scrolled-window-new))
+	(w (gtk-clist-new (gto-list-columns self))))
+    (set! (gto-list-widget self) s)
+    (set! (gto-list-list-widget self) w)
+    (gtk-scrolled-window-set-policy s 'automatic 'automatic)
+    (gtk-container-add s w)
+    (gtk-signal-connect w "select_row"
+			(lambda (row column event)
+			  (list-selected 
+			   (list-ref (gto-list-items self) row))))
+    (gtk-signal-connect w "unselect_row"
+			(lambda (row column event)
+			  (list-unselected 
+			   (list-ref (gto-list-items self) row))))
+    (gto-list-refresh self)))
+
+(define-struct block ()
+  name lib
+  (cached-generics #f) (cached-inputs #f) (cached-outputs #f))
+
+(define (block-sim-block b)
+  ;; XXX - Initialize library by asking for its exports.
+  ;; XXX   This shouldn't really be necessary.
+  (let ((lib (library-module (block-lib b))))
+    (module-ref lib (block-name b))))
+
+(define (block-set-interface b sim-b)
+  (let loop ((f (sim-block-interface sim-b))
+	     (g '())
+	     (i '())
+	     (o '()))
+    (cond ((null? f)
+	   (set! (block-cached-generics b) (reverse! g))
+	   (set! (block-cached-inputs b) (reverse! i))
+	   (set! (block-cached-outputs b) (reverse! o)))
+	  ((not (sim-port? (car f)))
+	   (loop (cdr f) (cons (sim-formal-name (car f)) g) i o))
+	  ((eq? (sim-port-dir (car f)) 'in)
+	   (loop (cdr f) g (cons (cons (sim-formal-name (car f))
+				       (sim-port-multi? (car f)))
+				 i) o))
+	  (else
+	   (loop (cdr f) g i (cons (cons (sim-formal-name (car f))
+					 (sim-port-multi? (car f)))
+				   o))))))
+  
+(define (block-ensure-interface b)
+  (if (not (block-cached-inputs b))
+      (block-set-interface b (block-sim-block b))))
+
+(define (block-generics b)
+  (block-ensure-interface b)
+  (block-cached-generics b))
+
+(define (block-inputs b)
+  (block-ensure-interface b)
+  (block-cached-inputs b))
+
+(define (block-outputs b)
+  (block-ensure-interface b)
+  (block-cached-outputs b))
+
+(define-method (list-selected (b block))
+  (activate-block b))
+
+(define-method (list-unselected (b block))
+  (activate-block #f))
+
+(define-method (list-label (b block))
+  (symbol->string (block-name b)))
+
+(define-struct library ()
+  name
+  (cached-blocks #f)
+  (module #f)
+  (block-list #f))
+
+(define (symbol<? a b)
+  (string<? (symbol->string a) (symbol->string b)))
+
+(define (library-blocks l)
+  (cond ((not (library-module l))
+	 (set! (library-module l) (sim-find-library (library-name l)))))
+  (cond ((not (library-cached-blocks l))
+	 (set! (library-cached-blocks l)
+	       (map (lambda (name)
+		      (make block :name name :lib l))
+		    (sort (sim-library-exports (library-module l))
+			  symbol<?)))))
+  (library-cached-blocks l))
+
+(define-method (list-selected (lib library))
+  (set! (gto-list-items *block-list*) (library-blocks lib))
+  (gto-list-refresh *block-list*)
+  (activate-block #f))
+
+(define-method (list-label (lib library))
+  (symbol->string (library-name lib)))
+
+(define-struct plumbing ()
+  label class)
+
+(define-method (list-label (p plumbing))
+  (plumbing-label p))
+
+(define-method (list-selected (p plumbing))
+  (if *canvas*
+      (if *sheet*
+	  (gto-canvas-set-floater *canvas* (make (plumbing-class p)
+					     :x 0 :y 0 :floating #t)
+				  0 0 0 0 #t #t)
+	  (msg "No schematic selected."))))
+
+(define-method (list-unselected (p plumbing))
+  (activate-block #f))
+
+(define-struct plumbing-library ()
+  plumbings)
+
+(define-method (list-label (p plumbing-library))
+  "(plumbing)")
+
+(define-method (list-selected (p plumbing-library))
+  (set! (gto-list-items *block-list*) (plumbing-library-plumbings p))
+  (gto-list-refresh *block-list*)
+  (activate-block #f))
+
+(define-method (initialize (p plumbing-library) args)
+  (next-method)
+  (set! (plumbing-library-plumbings p)
+	(list 
+	 (make plumbing :label "blob" :class blob)
+	 (make plumbing :label "input port" :class input-pad)
+	 (make plumbing :label "output port" :class output-pad)
+	 (make plumbing :label "input multi-port" :class input-multi-pad)
+	 (make plumbing :label "output multi-port" :class output-multi-pad)
+	 (make plumbing :label "bus multiplexer" :class multiplexer)
+	 (make plumbing :label "bus demultiplexer" :class demultiplexer)
+	 (make plumbing :label "terminator" :class terminator)
+	 (make plumbing :label "delay" :class wire-delay)
+	 (make plumbing :label "generic" :class generic-comp)
+	 (make plumbing :label "result" :class result-comp))))
+
+(define (update-libraries)
+  (define (list-subdirs dir)
+    (if (not (file-exists? dir))
+	'()
+	(let ((ds (opendir dir)))
+	  (let loop ((f (readdir ds))
+		     (d '()))
+	    (cond ((eof-object? f)
+		   d)
+		  (else
+		   (if (and (not (eqv? (string-ref f 0) #\.))
+			    (file-is-directory? (string-append dir "/" f)))
+		       (loop (readdir ds) (cons f d))
+		       (loop (readdir ds) d))))))))
+  (set! *libraries* (map (lambda (name)
+			   (make library :name name))
+			 (uniq
+			  (map string->symbol
+			       (sort (cons "work" 
+					   (map-append list-subdirs
+						       (sim-library-path)))
+				     string<?))))))
+
+(define (get-library name)
+  (let loop ((l *libraries*))
+    (cond ((null? l)
+	   #f)
+	  ((eq? (library-name (car l)) name)
+	   (car l))
+	  (else
+	   (loop (cdr l))))))
+
+(define (get-block name lib)
+  (let ((l (get-library lib)))
+    (if (not l)
+	#f
+	(let loop ((b (library-blocks l)))
+	  (cond ((null? b)
+		 #f)
+		((eq? (block-name (car b)) name)
+		 (car b))
+		(else
+		 (loop (cdr b))))))))
+
+(define (refresh-libraries)
+  (update-libraries)
+  (set! (gto-list-items *libs-list*) (cons (make plumbing-library)
+					   *libraries*))
+  (gto-list-refresh *libs-list*)
+  (msg "Refreshed libraries."))
+
+(define (make-libs-tab)
+  (let* ((vbox (gtk-vbox-new #f 2))
+	 (libs (make gto-list :items (cons (make plumbing-library)
+					   *libraries*)))
+	 (libs-w (gto-list-widget libs))
+	 (blocks (make gto-list))
+	 (blocks-w (gto-list-widget blocks))
+	 (rbut (gtk-button-new-with-label "Refresh")))
+    (set! *block-list* blocks)
+    (set! *libs-list* libs)
+    (gtk-widget-set-usize libs-w -1 100)
+    (gtk-box-pack-start vbox libs-w #f #f 0)
+    (gtk-box-pack-start vbox blocks-w #t #t 0)
+    (gtk-box-pack-start vbox rbut #f #t 0)
+    (gto-list-set-selection-mode libs 'browse)
+    (gto-list-set-selection-mode blocks 'single)
+    (gto-list-refresh libs)
+    (gtk-signal-connect rbut "clicked" refresh-libraries)
+    vbox))
+
+(define-struct sheet ()
+  (file #f) (root #f) (lib 'work) (block #f)
+  (comp-root #f) (wire-root #f) (blob-root #f)
+  (components '()) (blobs '()) (wires '())
+  (dirty #f) (zoom 1.0) (pop-to #f))
+
+(define-struct virtual-sheet (sheet))
+
+(define-method (initialize (s sheet) args)
+  (next-method)
+  (let ((root (gto-canvas-make-root *canvas*)))
+    (set! (sheet-root s) root)
+    (set! (sheet-comp-root s) (gto-canvas-make-layer root))
+    (set! (sheet-wire-root s) (gto-canvas-make-layer root))
+    (set! (sheet-blob-root s) (gto-canvas-make-layer root)))
+  (sheet-set-file s (sheet-file s)))
+
+(define-method (list-label (s sheet))
+  (string-append (if (sheet-block s) (symbol->string (sheet-block s))
+		     "(unnamed)")
+		 (if (sheet-dirty s) " *" "  ")))
+
+(define-method (list-label (s virtual-sheet))
+  (string-append "[" (symbol->string (sheet-block s)) "]"))
+
+(define-method (list-selected (s sheet))
+  (activate-sheet s))
+
+;(define-method (list-unselected (s sheet))
+;  (activate-sheet #f))
+
+(define (sheet-title s)
+  (if (not s) "(no file)" (or (sheet-file s) "(unnamed)")))
+
+(define (sheet-set-file s f)
+  (set! (sheet-file s) f)
+  (set! (sheet-block s) (if f (string->symbol (get-block-name f)) #f))
+  (if (eq? *sheet* s)
+      (update-title)))
+
+(define (restore-sheet-state s zoom)
+  (set! (sheet-zoom s) zoom)
+  (cond
+   ((eq? *sheet* s)
+    (set-zoom zoom))))
+
+(define-method (commit (s sheet))
+  (set! (sheet-zoom s) (get-zoom)))
+
+(define (insert-sheet-into-list s)
+  (set! (gto-list-items *sheet-list*) (cons s (gto-list-items *sheet-list*)))
+  (gto-list-refresh *sheet-list*))
+
+(define (activate-sheet s)
+  (msg-clear)
+  (cond (*sheet*
+	 (set! (sheet-components *sheet*) *components*)
+	 (set! (sheet-blobs *sheet*) *blobs*)
+	 (set! (sheet-wires *sheet*) *wires*)
+	 (commit *sheet*)))
+  (cond (s
+	 (gto-canvas-activate-root *canvas* (sheet-root s))
+	 (set! *components* (sheet-components s))
+	 (set! *blobs* (sheet-blobs s))
+	 (set! *wires* (sheet-wires s)))
+	(else
+	 (gto-canvas-activate-root *canvas* #f)))
+  (set! *sheet* s)
+  (update-title)
+  (update-zoom))
+
+(define (sheet-destroy s)
+  (set! (gto-list-items *sheet-list*) (delq s (gto-list-items *sheet-list*)))
+  (gto-list-refresh *sheet-list*)
+  (destroy-item! (sheet-root s)))
+
+(define (msg fmt . args)
+  (cond (*statusbar*
+	 (msg-clear)
+	 (gtk-statusbar-push *statusbar* *statusbar-context*
+			     (apply format #f fmt args)))))
+
+(define (msg-clear)
+  (cond (*statusbar*
+	 (gtk-statusbar-pop *statusbar* *statusbar-context*))))
+
+(define (exit-mockup)
+  (if (or-map sheet-dirty (gto-list-items *sheet-list*))
+      (msg "There are unsaved schematics.")
+      (gtk-main-quit)))
+
+(define (make-files-tab)
+  (let* ((v (gtk-vbox-new #f 2))
+	 (h (gtk-hbox-new #t 2))
+	 (lst (make gto-list))
+	 (b0 (gtk-button-new-with-label "New"))
+	 (b1 (gtk-button-new-with-label "Load"))
+	 (b11 (gtk-button-new-with-label "Unload"))
+	 (b12 (gtk-button-new-with-label "Revert"))
+	 (b2 (gtk-button-new-with-label "Save"))
+	 (b3 (gtk-button-new-with-label "Save As"))
+	 (b31 (gtk-button-new-with-label "Push"))
+	 (b32 (gtk-button-new-with-label "Pop"))
+	 (b4 (gtk-button-new-with-label "Run!"))
+	 (b41 (gtk-button-new-with-label "View Simulation Netlist"))
+	 (b5 (gtk-button-new-with-label "Exit")))
+    (gtk-box-pack-start v (gto-list-widget lst))
+    (set! *sheet-list* lst)
+    (gto-list-set-selection-mode lst 'browse)
+    (gtk-box-pack-start v b0 #f #f 0)
+    (gtk-box-pack-start v b1 #f #f 0)
+    (gtk-box-pack-start v b11 #f #f 0)
+    (gtk-box-pack-start v b12 #f #f 0)
+    (gtk-box-pack-start v b2 #f #f 0)
+    (gtk-box-pack-start v b3 #f #f 0)
+    (gtk-box-pack-start v h #f #f 0)
+    (gtk-box-pack-start h b31 #t #t 0)
+    (gtk-box-pack-start h b32 #t #t 0)
+    (gtk-box-pack-start v b4 #f #f 0)
+    (gtk-box-pack-start v b41 #f #f 0)
+    (gtk-box-pack-start v b5 #f #f 0)
+    (gtk-signal-connect b0 "clicked" new-sheet)
+    (gtk-signal-connect b1 "clicked" load-from-file-ask)
+    (gtk-signal-connect b11 "clicked" unload-sheet)
+    (gtk-signal-connect b12 "clicked" revert-sheet)
+    (gtk-signal-connect b2 "clicked" save-to-file)
+    (gtk-signal-connect b3 "clicked" save-to-file-ask)
+    (gtk-signal-connect b31 "clicked" push-into-selected)
+    (gtk-signal-connect b32 "clicked" pop-to-latest-push)
+    (gtk-signal-connect b4 "clicked" run-testbench)
+    (gtk-signal-connect b41 "clicked" view-simulation-netlist)
+    (gtk-signal-connect b5 "clicked" exit-mockup)
+    v))
+
+(define (new-sheet)
+  (let ((s (make sheet)))
+    (insert-sheet-into-list s)))
+
+(define (unload-sheet)
+  (let ((s *sheet*))
+    (cond ((and s (sheet-dirty s))
+	   (msg "Schematic contains unsaved changes."))
+	  (s
+	   (clear-all)
+	   (sheet-destroy s)))))
+
+(define (revert-sheet)
+  (let ((s *sheet*))
+    (cond ((not s)
+	   #t)
+	  ((sheet-dirty s)
+	   (let ((file (sheet-file s)))
+	     (set! (sheet-dirty s) #f)
+	     (unload-sheet)
+	     (if file
+		 (load-from-file file)
+		 (new-sheet))))
+	  (else
+	   (msg "No changes need to be reverted.")))))
+
+(define-generic dump-state)
+
+(define-method (dump-state (s sheet))
+  (list (sheet-zoom s)))
+
+(define (identify-components)
+  (do ((i 0 (1+ i))
+       (c *components* (cdr c)))
+      ((null? c))
+    (set! (comp-id (car c)) i)))
+
+(define (identify-blobs)
+  (do ((i 0 (1+ i))
+       (b *blobs* (cdr b)))
+      ((null? b))
+    (set! (blob-id (car b)) i)))
+
+(define (net-state)
+  (identify-components)
+  (identify-blobs)
+  (list (cons 'comps (map dump-state *components*))
+	(cons 'blobs (map dump-state *blobs*))
+	(cons 'wires (map dump-state *wires*))
+	(cons 'sheet (dump-state *sheet*))
+	(cons 'props *props*)))
+
+(define (restore-from-file file)
+  (with-input-from-file file
+    (lambda ()
+      (let loop ((form (read)))
+	(cond ((eof-object? form)
+	       #f)
+	      ((and (list? form) (= (length form) 3)
+		    (eq? (car form) 'define) (eq? (cadr form) 'ed-schematic))
+	       (restore (cadr (caddr form)))
+	       #t)
+	      (else
+	       (loop (read))))))))
+
+(define (restore state)
+  (let ((comps #f)
+	(blobs #f))
+    (do ((s state (cdr s)))
+	((null? s))
+      (case (caar s)
+	((comps)
+	 (set! comps
+	       (map (lambda (args)
+		      (apply comp-create-from-state args))
+		    (cdar s))))
+	((blobs)
+	 (set! blobs
+	       (map (lambda (args) (apply blob-create-from-state comps args))
+		    (cdar s))))
+	((wires)
+	 (for-each (lambda (args) (apply wire-create-from-state blobs args))
+		   (cdar s)))
+	((sheet)
+	 (apply restore-sheet-state *sheet* (cdar s)))
+	((props)
+	 (update-props *props* (cdar s)))))))
+
+(define (clear-all)
+  (for-each (lambda (c) (destroy c)) *components*)
+  (for-each (lambda (b) (blob-destroy b)) *blobs*))
+
+(define (commit-all)
+  (gto-proplist-commit *generics*)
+  (if *sheet* (commit *sheet*)))
+
+(define (@ fmt . rest)
+  (apply simple-format #t fmt rest)
+  (newline))
+
+(define (@@ fmt . rest)
+  (apply simple-format #f fmt rest))
+
+(define (global-prop key)
+  (car (assoc-ref *props* key)))
+
+(define (get-connected-blobs b)
+  (define (get-iter b res)
+    (cond ((memq b res) res)
+	  (else
+	   (let loop ((res (cons b res))
+		      (w (blob-wires b)))
+	     (cond ((null? w) res)
+		   (else
+		    (loop (get-iter (wire-blob (caar w) (- 1 (cdar w))) res)
+			  (cdr w))))))))
+  (get-iter b '()))
+
+;;; (ice-9 common-list) is buggy.
+
+(define (remove-if-not p l)
+  "Removes all elements from L where (P element) is #f.
+Returns everything that's left."
+  (cond ((null? l) '())
+	((not (p (car l))) (remove-if-not p (cdr l)))
+	(else (cons (car l) (remove-if-not p (cdr l))))))
+
+(define (unique l)
+  "Return a list containing elements of L, with duplicates removed."
+  (let loop ((acc '())
+	     (l l))
+    (if (null? l)
+	(reverse! acc)
+	(loop (if (member (car l) acc)
+		  acc
+		  (cons (car l) acc))
+	      (cdr l)))))
+
+(define (get-connected-ports p)
+  (remove-if-not port? (get-connected-blobs p)))
+
+(define (get-bus-width ports sig)
+  (let ((widths (unique (pick-mappings port-bus-width ports))))
+    (cond ((null? widths)
+	   1)
+	  ((null? (cdr widths))
+	   (car widths))
+	  (else
+	   `(if (= ,@widths)
+		,(car widths)
+		(error "conflicting widths on signal" ',sig))))))
+
+(define-generic port-bus-width-using-component)
+
+(define (port-bus-width p)
+  (port-bus-width-using-component p (port-comp p)))
+
+(define (terminator-port? p)
+  (terminator? (port-comp p)))
+
+(define *next-signal-id* #f)
+
+(define (make-signal-definition p prefix)
+  (let ((ports (get-connected-ports p)))
+    (cond ((some terminator-port? ports)
+	   (for-each (lambda (p) (set! (port-signal-id p) #f))
+		     ports)
+	   #f)
+	  (else
+	   (let* ((id (string->symbol (@@ "~a-sig~a" prefix *next-signal-id*)))
+		  (width (get-bus-width ports id)))
+	     (set! *next-signal-id* (1+ *next-signal-id*))
+	     (for-each (lambda (p) (set! (port-signal-id p) id))
+		       ports)
+	     (if (eqv? width 1)
+		 id
+		 `(,id :bus ,width)))))))
+
+(define (make-all-signal-definitions prefix)
+  (let loop ((defs '())
+	     (b *blobs*))
+    (cond ((null? b)
+	   defs)
+	  ((and (port? (car b)) (not (port-signal-id (car b))))
+	   (let ((def (make-signal-definition (car b) prefix)))
+	     (loop (if def (cons def defs) defs) (cdr b))))
+	  (else
+	   (loop defs (cdr b))))))
+
+(define (clear-signal-ids)
+  (set! *next-signal-id* 0)
+  (for-each (lambda (b)
+	      (if (port? b)
+		  (set! (port-signal-id b) #f)))
+	    *blobs*))
+
+(define (emit-signal-definitions prefix)
+  (clear-signal-ids)
+  (let ((defs (reverse! (make-all-signal-definitions prefix))))
+    (if (not (null? defs))
+	(@ "  ~s" `(signals ,@defs)))))
+
+(define-generic emit-component)
+
+(define (emit-libraries)
+  (let ((libs (uniq (pick-mappings (lambda (c)
+				     (and (block-comp? c)
+					  (library-name 
+					   (block-lib 
+					    (block-comp-block c)))))
+				   *components*))))
+    (for-each (lambda (l)
+		(@ "(use-library ~a (lib-~a- *))" l l))
+	      libs)))
+
+(define (sort-for-interface comps)
+  (sort comps 
+	(lambda (c1 c2)
+	  (or (> (comp-y c1) (comp-y c2))
+	      (and (= (comp-y c1) (comp-y c2))
+		   (> (comp-x c1) (comp-x c2)))))))
+
+(define (get-interface)
+  (define (component-interface c)
+    (cond ((input-pad? c)
+	   `(< ,(port-name (pad-comp-port c))))
+	  ((output-pad? c)
+	   `(> ,(port-name (pad-comp-port c))))
+	  ((input-multi-pad? c)
+	   `(<< ,(port-name (pad-comp-port c))))
+	  ((output-multi-pad? c)
+	   `(>> ,(port-name (pad-comp-port c))))
+	  ((generic-comp? c)
+	   `(= ,(string->symbol (car (assoc-ref (comp-props c) 'name)))
+	       ,@(let ((def (car (assoc-ref (comp-props c) 'default))))
+		   (if (> (string-length def) 0)
+		       (list (string->symbol def)) '()))))
+	  (else
+	   #f)))
+  (pick-mappings component-interface (sort-for-interface *components*)))
+
+(define (get-block-name file)
+  (basename file ".block"))
+
+(define (emit-epilog)
+  (let ((r (remove-if-not result-comp? *components*)))
+    (define (res->kw r)
+      (list (symbol->keyword (result-name r))
+	    (string->symbol (result-value r))))
+    (if (not (null? r))
+	(@ "  ~a" 
+	   `(epilog (results ,@(map-append res->kw r)))))))
+
+(define (emit-exit-condition)
+  #t)
+
+(define (emit-to-file f)
+  (commit-all)
+  (with-output-to-file f
+    (lambda ()
+      (let ((name (get-block-name f)))
+	(@ "(define ed-schematic '~s)\n" (net-state))
+	(emit-libraries)
+	(let ((v (global-prop 'verbose)))
+	  (if (> (string-length v) 0)
+	      (@ "\n(set-verbose ~a)" v)))
+	(@ "\n(define-block ~a" (cons (string->symbol name)
+				      (get-interface)))
+	(emit-signal-definitions name)
+	(for-each emit-component *components*)
+	(emit-epilog)
+	(emit-exit-condition)
+	(@ ")")))))
+
+(define (save-to-file-ask)
+  (if *sheet*
+      (if (virtual-sheet? *sheet*)
+	  (msg "Virtual sheets can not be saved.")
+	  (let ((d (gtk-file-selection-new "Save Schematic")))
+	    (gtk-signal-connect (gtk-file-selection-cancel-button d)
+				"clicked"
+				(lambda ()
+				  (gtk-object-destroy d)))
+	    (gtk-signal-connect (gtk-file-selection-ok-button d)
+				"clicked"
+				(lambda ()
+				  (let ((f
+					 (gtk-file-selection-get-filename d)))
+				    (gtk-object-destroy d)
+				    (sheet-set-file *sheet* f)
+				    (dirty!)
+				    (save-to-file))))
+	    (gtk-widget-show-all d)))))
+
+(define (make-backup file level)
+  (if (zero? level)
+      (delete-file file)
+      (let ((bakfile (string-append file "~")))
+	(if (file-exists? bakfile)
+	    (make-backup bakfile (1- level)))
+	(if (file-exists? file)
+	    (rename-file file bakfile)))))
+
+(define (save-to-file)
+  (cond
+   ((not *sheet*)
+    #f)
+   ((not (sheet-file *sheet*))
+    (save-to-file-ask))
+   ((not (sheet-dirty *sheet*))
+    (msg "No changes need to be saved."))
+   (else
+    (commit-all)
+    (msg-clear)
+    (make-backup (sheet-file *sheet*) 3)
+    (emit-to-file (sheet-file *sheet*))
+    (set! (sheet-dirty *sheet*) #f)
+    (gto-list-refresh-labels *sheet-list*))))
+
+(define (load-from-file-ask)
+  (let ((d (gtk-file-selection-new "Load Schematic")))
+    (gtk-signal-connect (gtk-file-selection-cancel-button d)
+			"clicked"
+			(lambda ()
+			  (gtk-object-destroy d)))
+    (gtk-signal-connect (gtk-file-selection-ok-button d)
+			"clicked"
+			(lambda ()
+			  (let ((f (gtk-file-selection-get-filename d)))
+			    (gtk-object-destroy d)
+			    (load-from-file f))))
+    (gtk-widget-show-all d)))
+
+(define (load-from-file f)
+  (let ((sh (make sheet :file f)))
+    (insert-sheet-into-list sh)
+    (cond ((not (restore-from-file f))
+	   (unload-sheet)
+	   (msg "No schematic in file.")))))
+
+(define (find-block-sheet b)
+  (find-if (lambda (s)
+	     (and (eq? (sheet-lib s) (library-name (block-lib b)))
+		  (eq? (sheet-block s) (block-name b))))
+	   (gto-list-items *sheet-list*)))
+
+(define (push-into-block b)
+  (let ((from *sheet*))
+    (cond
+     ((find-block-sheet b)
+      => activate-sheet)
+     (else
+      (let ((sb (block-sim-block b)))
+	(if (sim-primitive-block? sb)
+	    (msg "Can only push into hierachical blocks.")
+	    (let ((fn (sim-find-library-file 
+		       (symbol->string (library-name (block-lib b)))
+		       (string-append (symbol->string (block-name b))
+				      ".block"))))
+	      (if fn
+		  (load-from-file fn)
+		  (msg "Can't find definition of ~a/~a."
+		       (library-name (block-lib b)) (block-name b))))))))
+    (cond
+     ((not (eq? from *sheet*))
+      (set! (sheet-pop-to *sheet*) from)
+      (set! (sheet-lib *sheet*) (block-lib b))))))
+
+(define (push-into-selected)
+  (cond
+   ((not *selected-thing*)
+    (msg "Nothing selected."))
+   ((not (block-comp? *selected-thing*))
+    (msg "Can only push into components."))
+   (else
+    (push-into-block (block-comp-block *selected-thing*)))))
+
+(define (pop-to-latest-push)
+  (cond
+   ((and *sheet* (sheet-pop-to *sheet*))
+    (activate-sheet (sheet-pop-to *sheet*)))
+   (else
+    (msg "Nothing to pop to."))))
+
+(define (view-simulation-netlist)
+  (cond 
+   ((and *sheet* (not (virtual-sheet? *sheet*)))
+    (let* ((lib (sim-find-library (sheet-lib *sheet*)))
+	   (b (begin
+		(pk 'exports (sim-library-exports lib))
+		(module-ref lib (sheet-block *sheet*))))
+	   (n (sim-make-net b "Ed")))
+      (if n
+	  (push-into-sim-component (car (sim-comp-children n)))
+	  (msg "There are errors in the simulation."))))))
+
+;                 ((comps (block-comp ((name "" #f)
+; 				       (value "(expt 2 140)" #t))
+; 				      60.0 175.0
+; 				      #:block (source example))
+; 			  (block-comp ((name "" #f)
+; 				       (count "1" #t))
+; 				      250.0 175.0
+; 				      #:block (destination example)))
+; 		   (blobs (#:comp 0 #:name out)
+; 			  (#:comp 1 #:name in))
+; 		   (wires (0 1 #:props ()))
+; 		   (sheet 1.0)
+; 		   (props (verbose "" #f)))))
+
+(define (make-comp-state c)
+  (define (make-virtual-block)
+    (let* ((sb (sim-comp-block c))
+	   (b (make block :lib #f
+		    :name (string->symbol (sim-block-name sb)))))
+      (block-set-interface b sb)
+      b))
+  `(block-comp ((name ,(sim-comp-name c) #f))
+	       100.0 100.0
+	       :block ,(make-virtual-block)))
+
+(define (make-sheet-state comps)
+  (let ((comps (map (lambda (c) (cons c (make-comp-state c))) comps)))
+    (define (find-comp c) (cdr (assq c comps)))))
+
+(define (push-into-sim-component c)
+  (let ((sh (make virtual-sheet)))
+    (set! (sheet-block sh) (string->symbol (sim-comp-name c)))
+    (insert-sheet-into-list sh)
+    (let ((state (pk 'state
+		     `((comps ,@(map make-comp-state
+				     (sim-comp-children c)))))))
+      (restore state))))
+
+;; Running simulations
+
+(define (run-command prog . args)
+  (flush-all-ports)
+  (gdk-flush)
+  (let ((pid (primitive-fork)))
+    (if (zero? pid)
+	(apply execlp prog prog args)
+	(msg "Started process ~a" pid))))
+
+(define (report-status pid stat)
+  (cond ((status:exit-val stat)
+	 => (lambda (code)
+	      (if (zero? code)
+		  (msg "Process ~a exited normally." pid)
+		  (msg "Process ~a exited with value ~a." pid code))))
+	((status:term-sig stat)
+	 => (lambda (code)
+	      (msg "Process ~a terminated on signal ~a." pid code)))
+	((status:stop-sig stat)
+	 => (lambda (code)
+	      (msg "Process ~a stopped on signal ~a." pid code)))
+	(else
+	 (msg "Process ~a entered unknown state." pid))))
+
+(define (waitpid-soft)
+  (catch 'system-error
+	 (lambda ()
+	   (waitpid -1 WNOHANG))
+	 (lambda args
+	   (if (= (system-error-errno args) ECHILD)
+	       #f
+	       (apply throw args)))))
+
+(define (reap-children)
+  (let ((stats (waitpid-soft)))
+    (cond ((and stats (not (zero? (car stats))))
+	   (report-status (car stats) (cdr stats))
+	   (reap-children)))))
+
+(define (init-sub-processes)
+  (let ((p (get-signal-outlet)))
+    (add-signal-notify SIGCHLD)
+    (gtk-input-add p '(read)
+		   (lambda args
+		     (let ((code (char->integer (read-char p))))
+		       (cond ((= code SIGCHLD)
+			      (reap-children))
+			     (else
+			      (error "spurious signal" code))))))))
+
+; (define (run-testbench)
+;   (define (simulation)
+;     (let* ((l (sim-find-library 'work))
+; 	   (e (sim-library-exports l))  ;; to trigger loading of common.scm
+; 	   (b (sim-load-block (sheet-file *sheet*) (sheet-block *sheet*) l))
+; 	   (r (remove-if-not result-comp? *components*))
+; 	   (c (b))) ;; XXX - set generics of b
+;       (sim-set-epilog
+;        (lambda ()
+; 	 (for-each (lambda (r)
+; 		     (pk (result-name r) (sim-result c (result-name r))))
+; 		   r)))))
+;   (if *sheet* (sim-run simulation)))
+
+(define (run-testbench)
+  (let* ((filename (string-append "gossip-ed-sim." "XXXXXX"))
+	 (file (mkstemp! filename))
+	 (results (remove-if-not result-comp? *components*)))
+    (format file "(use-library work *)~%~%")
+    (format file "(~a)~%" (sheet-block *sheet*))
+    (if (not (null? results))
+	(format file "~s~%" `(epilog ,@(map (lambda (r)
+					      `(pk ',(result-name r)
+						   (result ',(result-name r))))
+					    results))))
+    (format file "(delete-file ~s)~%" filename)
+    (close-port file)
+    (run-command "gossip-run" filename)))
+
+;; Canvas utilities
+
+(define (make-gesture-handler-attacher canvas root-notify root-only?)
+  (let ((cur-button #f)
+	(dragging #f)
+	(x0 #f) (y0 #f)
+	(x1 #f) (y1 #f))
+    (gtk-signal-connect canvas "enter_notify_event"
+			(lambda (ev)
+			  (gtk-widget-grab-focus canvas)
+			  (root-notify 'enter 0 (gdk-event-state ev) 0 0)
+			  #f))
+    (gtk-signal-connect canvas "leave_notify_event"
+			(lambda (ev)
+			  (gtk-widget-grab-focus canvas)
+			  (root-notify 'leave 0 (gdk-event-state ev) 0 0)
+			  #f))
+    (gtk-signal-connect canvas "button_release_event"
+			(lambda (ev)
+			  (if (= (gdk-event-button ev) 3)
+			      (set! cur-button #f))
+			  #f))
+    (gtk-signal-connect (gossip-canvas-root canvas) "event"
+			(lambda (ev)
+			  (case (gdk-event-type ev)
+			    ((motion-notify)
+			     (root-notify 'move 0 (gdk-event-state ev)
+					  (gdk-event-x ev) (gdk-event-y ev))
+			     #t)
+			    ((button-press)
+			     (root-notify 'click
+					  (gdk-event-button ev)
+					  (gdk-event-state ev)
+					  (gdk-event-x ev) (gdk-event-y ev))
+			     #t)
+			    (else
+			     #f))))
+    (lambda (item notify)
+      (define (handler ev)
+	(if (and (not cur-button) (root-only?))
+	    #f
+	    (case (gdk-event-type ev)
+	      
+	      ((button-press)
+	       (let ((x (gdk-event-x ev))
+		     (y (gdk-event-y ev))
+		     (b (gdk-event-button ev))
+		     (s (gdk-event-state ev)))
+		 (cond
+		  ((and cur-button (= b 3))
+		   ;; cancel any gesture
+		   (if dragging
+		       (notify 'drag-cancel cur-button s x0 y0))
+		   (set! cur-button 3)
+		   #t)
+		  ((= b 3)
+		   ;; show menu
+		   (notify 'popup 3 (gdk-event-state ev) x y)
+		   #t)
+		  ((not cur-button)
+		   ;; start a gesture
+		   (set! cur-button b)
+		   (set! dragging #f)
+		   (set! x0 x)
+		   (set! y0 y)
+		   (set! x1 x)
+		   (set! y1 y)
+		   #t)
+		  (else
+		   ;; ignore
+		   #f))))
+	      
+	      ((button-release)
+	       (let ((x (gdk-event-x ev))
+		     (y (gdk-event-y ev))
+		     (b (gdk-event-button ev)))
+		 (cond
+		  ((and cur-button (= cur-button b))
+		   ;; finish gesture
+		   (if (< b 3)
+		       (if dragging
+			   (notify 'drag-stop cur-button (gdk-event-state ev)
+				   x y)
+			   (notify 'click cur-button (gdk-event-state ev)
+				   x y)))
+		   (set! cur-button #f)
+		   #t)
+		  (else
+		   ;; ignore
+		   #f))))
+	      
+	      ((motion-notify)
+	       (cond
+		((and cur-button (< cur-button 3))
+		 ;; start drag or only report movement
+		 (let ((x (gdk-event-x ev))
+		       (y (gdk-event-y ev))
+		       (s (gdk-event-state ev)))
+		   (cond ((not dragging)
+			  (set! dragging #t)
+			  (notify 'drag-start cur-button s x0 y0)))
+		   (notify 'drag-update cur-button s x y)
+		   (set! x1 x)
+		   (set! y1 y))
+		 #t)
+		(else
+		 ;; ignore
+		 #f)))
+
+	      ((key-press key-release)
+	       ;; nothing yet
+	       #t)
+	  
+	      (else
+	       ;; ignore
+	       ;;(pk (gdk-event-type ev))
+	       #f))))
+      (gtk-signal-connect item "event" handler))))
+
+;; gesture-case translates sort-hands for gestures into equivalent
+;; predicates on OP, BUTTON and STATE.
+
+(define-macro (gesture-case gest . clauses)
+  (let ((op (car gest))
+	(button (cadr gest))
+	(state (caddr gest)))
+    (define (state->cond s)
+      (case s 
+	((shift) `(memq 'shift-mask ,state))
+	((ctrl) `(memq 'control-mask ,state))
+	((any) #t)))
+    (define (gest->cond g)
+      (cond
+       ((eq? 'else g)
+	'else)
+       ((= 2 (length g))
+	(gest->cond (cons 'any g)))
+       (else
+	`(and ,(state->cond (car g))
+	      (eq? ,op ',(cadr g))
+	      (= ,button ,(caddr g))))))
+    `(cond
+      ,@(map (lambda (c)
+	       `(,(gest->cond (car c)) ,@(cdr c)))
+	     clauses))))
+
+;;; (define (make-rubber-box root event-source color button notify)
+;;;   (let ((start-x #f) (start-y #f)
+;;; 	(end-x #f) (end-y #f)
+;;; 	(box #f))
+;;;     (define (box-coords)
+;;;       (vector (min start-x end-x) (min start-y end-y)
+;;; 	      (max start-x end-x) (max start-y end-y)))
+;;;     (define (handler ev)
+;;;       (case (gdk-event-type ev)
+;;; 	((button-press)
+;;; 	 (cond 
+;;; 	  ((= (gdk-event-button ev) button)
+;;; 	   (set! start-x (gdk-event-x ev))
+;;; 	   (set! start-y (gdk-event-y ev))
+;;; 	   (set! end-x start-x)
+;;; 	   (set! end-y start-y)
+;;; 	   (set! box (gossip-canvas-item-new root 'GossipCanvasRect
+;;; 					     (box-coords)
+;;; 					     :outline_color color))
+;;; 	   #t)
+;;; 	  (else
+;;; 	   #f)))
+;;; 	((button-release)
+;;; 	 (cond
+;;; 	  ((and box (= (gdk-event-button ev) button))
+;;; 	   (gtk-object-destroy box)
+;;; 	   (set! box #f)
+;;; 	   (notify (min start-x end-x) (min start-y end-y)
+;;; 		   (max start-x end-x) (max start-y end-y)
+;;; 		   (memq 'shift-mask (gdk-event-state ev)))
+;;; 	   #t)
+;;; 	  (else
+;;; 	   #f)))
+;;; 	((motion-notify)
+;;; 	 (cond (box
+;;; 		(set! end-x (gdk-event-x ev))
+;;; 		(set! end-y (gdk-event-y ev))
+;;; 		(gossip-canvas-item-set box
+;;; 					(box-coords))
+;;; 		#t)
+;;; 	       (else
+;;; 		#f)))
+;;; 	(else
+;;; 	 #f)))
+;;;     (gtk-signal-connect event-source "event" handler)))
+
+(define-struct gto-canvas ()
+  (widget #f) (grid-item #f) (root #f)
+  (gesture-attacher #f)
+  (floaters #f)
+  (floater-x #f) (floater-y #f)
+  (floater-x0 #f) (floater-y0 #f)
+  (floater-off-x #f) (floater-off-y #f)
+  (floater-hide? #t) (floater-moved? #f) (floater-stick? #f)
+  (floater-items #f))
+
+(define-generic floater-items)
+(define-generic floater-place)
+(define-generic floater-cancel)
+(define-generic floater-select)
+(define-generic floater-hit)
+
+(define-method (floater-select f ext)
+  #t)
+
+(define-method (floater-select f)
+  (floater-select f #f))
+
+(define-method (floater-hit f x0 y0 x1 y1)
+  #f)
+
+(define-macro (with-world-x-y canvas ev . body)
+  `(let ((xc (list #f)) (yc (list #f))
+	 (ev ,ev))
+     (gossip-canvas-window-to-world ,canvas 
+				    (gdk-event-x ev) (gdk-event-y ev)
+				    xc yc)
+     (let ((x (car xc)) (y (car yc)))
+       ,@body)))
+
+(define-method (initialize (self gto-canvas) args)
+  (next-method)
+  (let* ((w (gossip-canvas-new))
+	 (g (gossip-canvas-item-new (gossip-canvas-root w)
+				    'GossipCanvasGrid #(10 10)
+				    :color "black"))
+	 (box #f) (start-x #f) (now-x #f) (start-y #f) (now-y #f))
+
+    (define (grid-notify op button state x y)
+      (gesture-case (op button state)
+	((popup 3)
+	 (pk 'grid-popup))
+        ((click 1)
+	 (unmark-all))
+	((drag-start 1)
+	 (set! start-x x) (set! now-x x)
+	 (set! start-y y) (set! now-y y)
+	 (set! box (gossip-canvas-item-new (gossip-canvas-root w)
+					   'GossipCanvasLine
+					   (vector x y x y
+						   x y x y
+						   x y)
+					   :fill_color "black")))
+	((drag-update 1)
+	 (let ((dx (- x now-x))
+	       (dy (- y now-y)))
+	   (gossip-canvas-line-move-point box 1 dx 0)
+	   (gossip-canvas-line-move-point box 2 dx dy)
+	   (gossip-canvas-line-move-point box 3 0 dy)
+	   (set! now-x x) (set! now-y y)))
+	((drag-stop 1)
+	 (gtk-object-destroy box)
+	 (set! box #f)
+	 (select-from-box (min start-x x) (min start-y y)
+			  (max start-x x) (max start-y y)
+			  (memq 'control-mask state)))
+	((drag-cancel 1)
+	 (gtk-object-destroy box)
+	 (set! box #f))))
+
+    (define (root-notify op button state x y)
+      (case op
+	((move)
+	 (gto-canvas-move-floater self x y))
+	((enter)
+	 (gto-canvas-show-floater self))
+	((leave)
+	 (gto-canvas-hide-floater self))
+	((click)
+	 (case button
+	   ((1)
+	    (gto-canvas-place-floater self))
+	   ((3)
+	    (gto-canvas-cancel-floater self))))))
+
+    (set! (gto-canvas-widget self) w)
+    (set! (gto-canvas-grid-item self) g)
+    (set! (gto-canvas-gesture-attacher self)
+	  (make-gesture-handler-attacher w root-notify
+					 (lambda ()
+					   (gto-canvas-floaters self))))
+
+    (gossip-canvas-item-lower-to-bottom g)
+    (gto-canvas-attach-handler self g grid-notify)
+
+;;     (gtk-signal-connect w "button_press_event"
+;; 			(lambda (ev)
+;; 			  (let ((b (gdk-event-button ev)))
+;; 			    (cond
+;; 			     ((and (gto-canvas-cur-button self) (= b 3))
+;; 			      ;; cancel any gesture
+;; 			      (gto-canvas-cancel-floater self)
+;; 			      (set! (gto-canvas-cur-button self) 3)
+;; 			      #t)
+;; 			     ((1)
+;; 				    (gto-canvas-place-floater self))
+;; 				   ((2)
+;; 				    )
+;; 				 (gtk-signal-emit-stop-by-name
+;; 				  w "button_press_event")))
+;; 			  #t))
+;;     (gtk-signal-connect w "button_release_event"
+;; 			(lambda (ev)
+;; 			  (case (gdk-event-button ev)
+;; 			    ((1)
+;; 			     (if (gto-canvas-floaters self)
+;; 				 (cond ((gto-canvas-floater-moved? self)
+;; 					(gto-canvas-place-floater self))
+;; 				       ((not (gto-canvas-floater-stick? self))
+;; 					(gto-canvas-select-floater
+;; 					 self
+;; 					 (memq 'shift-mask 
+;; 					       (gdk-event-state ev))))))))))
+;;     (gtk-signal-connect w "motion_notify_event"
+;; 			(lambda (ev)
+;; 			  (with-world-x-y w ev
+;; 					  (gto-canvas-move-floater self x y))))
+;;     (gtk-signal-connect w "enter_notify_event"
+;; 			(lambda (ev)
+;; 			  (with-world-x-y w ev
+;; 					  (gto-canvas-show-floater self x y))))
+;;     (gtk-signal-connect w "leave_notify_event"
+;; 			(lambda (ev)
+;; 			  (gto-canvas-hide-floater self)))
+    ))
+
+(define (gto-canvas-attach-handler c item notify)
+  ((gto-canvas-gesture-attacher c) item notify))
+
+(define (gto-canvas-make-root c)
+  (gossip-canvas-item-new (gossip-canvas-root (gto-canvas-widget c))
+			  'GossipCanvasGroup #()))
+
+(define (gto-canvas-activate-root c r)
+  (if (gto-canvas-root c)
+      (gossip-canvas-item-hide (gto-canvas-root c)))
+  (set! (gto-canvas-root c) r)
+  (if r (gossip-canvas-item-show r)))
+
+(define (gto-canvas-set-floater c f ex ey ix iy hide? stick?)
+  ;; When f is among the *marked-things*, we float all *marked-things*
+  ;; but keep f at the front of the list.
+  (let ((fs (if (memq f *marked-things*)
+		(cons f (delq f *marked-things*))
+		(list f))))
+    (gto-canvas-cancel-floater c)
+    (set! (gto-canvas-floaters c) fs)
+    (set! (gto-canvas-floater-x c) ex)
+    (set! (gto-canvas-floater-y c) ey)
+    (set! (gto-canvas-floater-x0 c) ex)
+    (set! (gto-canvas-floater-y0 c) ey)
+    (set! (gto-canvas-floater-off-x c) (- ix ex))
+    (set! (gto-canvas-floater-off-y c) (- iy ey))
+    (set! (gto-canvas-floater-hide? c) hide?)
+    (set! (gto-canvas-floater-stick? c) stick?)
+    (set! (gto-canvas-floater-moved? c) #f)
+    (set! (gto-canvas-floater-items c)
+	  (map-append floater-items fs))
+    ;;   (for-each (lambda (i)
+    ;; 	      (gossip-canvas-item-raise-to-top (if (pair? i) (car i) i)))
+    ;; 	    (gto-canvas-floater-items c))
+    (msg-clear)))
+
+(define (togrid x g) (* g (round (/ x g))))
+
+(define (gto-canvas-move-floater c x y)
+  (cond ((gto-canvas-floaters c)
+	 (let ((dx (togrid (- x (gto-canvas-floater-x c)) 5))
+	       (dy (togrid (- y (gto-canvas-floater-y c)) 5)))
+	   (cond ((not (and (zero? dx) (zero? dy)))
+		  (move-floater-items (gto-canvas-floater-items c) dx dy)
+		  (set! (gto-canvas-floater-x c)
+			(+ dx (gto-canvas-floater-x c)))
+		  (set! (gto-canvas-floater-y c)
+			(+ dy (gto-canvas-floater-y c)))
+		  (set! (gto-canvas-floater-moved? c) #t)))))))
+
+(define (move-floater-items items dx dy)
+  (for-each (lambda (i)
+	      (if (pair? i)
+		  (gossip-canvas-line-move-point 
+		   (car i) (cdr i) dx dy)
+		  (gossip-canvas-item-move i dx dy)))
+	    items))
+
+(define (gto-canvas-move-floater-off c x y)
+  (gto-canvas-move-floater c
+			   (- x (gto-canvas-floater-off-x c))
+			   (- y (gto-canvas-floater-off-y c))))
+
+(define (gto-canvas-show-floater c)
+  (cond ((and (gto-canvas-floaters c) (gto-canvas-floater-hide? c))
+	 (for-each (lambda (i)
+		     (gossip-canvas-item-show (if (pair? i) (car i) i)))
+		   (gto-canvas-floater-items c)))))
+
+(define (gto-canvas-hide-floater c)
+  (cond ((and (gto-canvas-floaters c) (gto-canvas-floater-hide? c))
+	 (for-each (lambda (i)
+		     (gossip-canvas-item-hide (if (pair? i) (car i) i)))
+		   (gto-canvas-floater-items c)))))
+
+(define (gto-canvas-cancel-floater c)
+  (let ((fs (gto-canvas-floaters c)))
+    (cond (fs
+	   (move-floater-items (gto-canvas-floater-items c)
+			       (- (gto-canvas-floater-x0 c)
+				  (gto-canvas-floater-x c))
+			       (- (gto-canvas-floater-y0 c)
+				  (gto-canvas-floater-y c)))
+	   (for-each floater-cancel fs)
+	   (set! (gto-canvas-floaters c) #f)))))
+
+(define (gto-canvas-select-floater c ext)
+  (let ((fs (gto-canvas-floaters c)))
+    (cond (fs
+	   (gto-canvas-cancel-floater c)
+	   (floater-select (car fs) ext)))))
+
+(define (gto-canvas-place-floater c)
+  (let ((fs (gto-canvas-floaters c)))
+    (cond (fs
+	   (set! (gto-canvas-floaters c) #f)
+	   (for-each (lambda (f)
+		       (floater-place f
+				      (- (gto-canvas-floater-x c)
+					 (gto-canvas-floater-x0 c))
+				      (- (gto-canvas-floater-y c)
+					 (gto-canvas-floater-y0 c))))
+		     fs)))))
+
+(define (gto-canvas-set-zoom c z)
+  ;;   (if (< z 0.3)
+  ;;       (gossip-canvas-item-hide (gto-canvas-grid-item c))
+  ;;       (gossip-canvas-item-show (gto-canvas-grid-item c)))
+  (let ((g (max (togrid (/ 10 z) 10) 10)))
+    (gossip-canvas-item-set (gto-canvas-grid-item c) (vector g g)))
+  (gossip-canvas-set-pixels-per-unit (gto-canvas-widget c) z))
+
+;; Layers
+
+(define (gto-canvas-make-layer root)
+  (let ((item (gossip-canvas-item-new root 'GossipCanvasGroup #())))
+    (gossip-canvas-item-raise-to-top item)
+    item))
+
+;; Components
+
+(define-struct comp ()
+  x y group event-group
+  (ports '()) (props '()) (symbol #f) (props-text-item #f) (id #f) (menu #f)
+  (floating #f) (instantiated #f) (selected #f))
+
+(define-generic instantiate)        ;; XXX - remove
+(define-generic destroy)            ;; on comp
+(define-generic enter-notify)       ;; on symbol
+(define-generic leave-notify)       ;; on symbol
+
+(define-method (enter-notify sym)
+  #t)
+
+(define-method (leave-notify sym)
+  #t)
+
+(define-method (selection-notify (c comp) state)
+  (selection-notify (comp-symbol c) state)
+  (case state
+    ((selected)
+     (set! (comp-selected c) #t)
+     (activate-props (comp-props c) c))
+    ((marked none)
+     (set! (comp-selected c) #f)
+     (activate-props #f #f))))
+
+(define-method (commit (bc comp))
+  (comp-set-props-text bc (comp-props bc)))
+
+(define (comp-set-props-text c props)
+  (if (comp-props-text-item c)
+      (let loop ((t "")
+		 (p props))
+	(cond ((null? p)
+	       (gossip-canvas-item-set (comp-props-text-item c) #f :text t))
+	      ((caddr (car p))
+	       (loop (string-append t (@@ "~a = ~a\n"
+					  (car (car p)) (cadr (car p))))
+		     (cdr p)))
+	      (else
+	       (loop t (cdr p)))))))
+
+(define (comp-enable-props-text c x y)
+  (let ((i (gossip-canvas-item-new (comp-group c) 'GossipCanvasText 
+				   (vector x y) :text "" :fill_color "black"
+				   :anchor 'north-west)))
+    (gossip-canvas-text-set-zoom-fonts i +zoom-fonts+ +medium-font+ 1.0 0.5)
+    (set! (comp-props-text-item c) i)))
+
+(define (comp-add-port bc . keys)
+  (let-keywords keys #f (x y (multi #f) px py label
+			 (tx #f) (ty #f) (anchor #f))
+    (let* ((g (comp-group bc))
+	   (cx (+ x (comp-x bc)))
+	   (cy (+ y (comp-y bc)))
+	   (t (if tx 
+		  (let ((i (gossip-canvas-item-new g 'GossipCanvasText
+						   (vector (+ x tx) (+ y ty))
+						   :text (symbol->string label)
+						   :anchor anchor
+						   :fill_color "black")))
+		    (gossip-canvas-text-set-zoom-fonts i +zoom-fonts+ 
+						       +small-font+ 1.0 0.4)
+		    i)
+		  #f))
+	   (l (gossip-canvas-item-new g 'GossipCanvasLine 
+				      (vector x y (+ x px) (+ y py))
+				      :fill_color "black"
+				      :width_pixels (if multi 3 0)))
+	   (p (make port :comp bc :name label :text-item t :line-item l
+		    :x (+ cx px) :y (+ cy py) :multi multi)))
+      (gossip-canvas-item-lower-to-bottom l)
+      (set! (comp-ports bc) (cons p (comp-ports bc)))
+      p)))
+
+
+(define (comp-remove-port c p)
+  (set! (comp-ports c) (delq p (comp-ports c)))
+  (if (port-text-item p)
+      (destroy-item! (port-text-item p)))
+  (destroy-item! (port-line-item p))
+  (port-destroy p))
+
+(define-method (initialize (self comp) args)
+  (next-method)
+  (let* ((root (sheet-comp-root *sheet*))
+	 (g (gossip-canvas-item-new root 'GossipCanvasGroup #()))
+	 (eg (gossip-canvas-item-new g 'GossipCanvasGroup #())))
+
+    (define (comp-notify op button state x y)
+      (gesture-case (op button state x y)
+       ((popup 3)
+	(popup (comp-menu self) self))
+       ((click 1)
+	(select-thing self (memq 'control-mask state)))
+       ((drag-start 1)
+	(comp-start-floating self x y))
+       ((drag-update 1)
+	(gto-canvas-move-floater *canvas* x y))
+       ((drag-cancel 1)
+	(gto-canvas-cancel-floater *canvas*))
+       ((drag-stop 1)
+	(gto-canvas-place-floater *canvas*))))
+
+    (gto-canvas-attach-handler *canvas* eg comp-notify)
+
+    (gossip-canvas-item-move g (comp-x self) (comp-y self))
+
+    (set! (comp-menu self) default-comp-menu)
+
+    (if (comp-floating self)
+	(gossip-canvas-item-hide g))
+    (set! (comp-group self) g)
+    (set! (comp-event-group self) eg)))
+
+(define-method (instantiate (bc comp))
+  (let ((g (comp-group bc))
+	(cx (comp-x bc))
+	(cy (comp-y bc)))
+    (set! (comp-instantiated bc) #t)
+    (set! *components* (cons bc *components*))
+    (commit bc)))
+
+(define-struct popup-menu ()
+  items menu)
+
+(define menu-object #f)
+
+(define (menu-item-invoker func)
+  (lambda () (func menu-object)))
+
+(define-method (initialize (p popup-menu) args)
+  (next-method)
+  (let ((menu (gtk-menu-new)))
+    (for-each (lambda (l)
+		(let ((i (gtk-menu-item-new-with-label (car l))))
+		  (gtk-menu-append menu i)
+		  (gtk-signal-connect i "activate" 
+				      (menu-item-invoker (cadr l)))))
+	      (popup-menu-items p))
+    (gtk-widget-show-all menu)
+    (set! (popup-menu-menu p) menu)))
+
+(define (popup m o)
+  (set! menu-object o)
+  (gtk-menu-popup (popup-menu-menu m) #f #f 3 0))
+
+(define default-comp-menu (make popup-menu
+			    :items `(("Select" ,floater-select)
+				     ("Delete" ,destroy))))
+
+(define-method (destroy (c comp))
+  (dirty!)
+  (unselect-thing c)
+  (for-each port-destroy (comp-ports c))
+  (destroy-item! (comp-group c))
+  (set! (comp-event-group c) #f)
+  (set! *components* (delq c *components*)))
+
+(define (comp-start-floating c x y)
+  (set! (comp-floating c) #t)
+  (gto-canvas-set-floater *canvas* c x y (comp-x c) (comp-y c)
+			  #f (comp-selected c)))
+
+(define-method (floater-items (c comp))
+  (cons (comp-group c)
+	(map-append floater-items (comp-ports c))))
+
+(define (find-comp-port c name)
+  (define (match p) (and (eq? (port-name p) name) p))
+  (or-map match (comp-ports c)))
+
+(define (map-append func items)
+  (apply append (map func items)))
+
+(define (comp-move-ports c dx dy)
+  (define (move-port p)
+    (set! (blob-x p) (+ (blob-x p) dx))
+    (set! (blob-y p) (+ (blob-y p) dy)))
+  (define (connect-port p)
+    (let ((t (find-target (blob-x p) (blob-y p) (list p))))
+      (cond (t
+	     (merge-blobs t p)))))
+  (for-each move-port (comp-ports c))
+  (for-each connect-port (comp-ports c)))
+
+(define-method (floater-place (c comp) dx dy)
+  (dirty!)
+  (set! (comp-floating c) #f)
+  (let ((x (+ (comp-x c) dx))
+	(y (+ (comp-y c) dy)))
+    (comp-move-ports c dx dy)
+    (set! (comp-x c) x)
+    (set! (comp-y c) y)
+    (gto-list-clear-selection *block-list*)
+    (cond ((not (comp-instantiated c))
+	   (instantiate c)))))
+
+(define-method (floater-cancel (c comp))
+  (cond ((not (comp-floating c))
+	 #f)
+	((not (comp-instantiated c))
+	 (destroy c)
+	 (set! (comp-group c) #f)
+	 (set! (comp-event-group c) #f)))
+  (set! (comp-floating c) #f)
+  (gto-list-clear-selection *block-list*))
+
+(define-method (floater-select (c comp) ext)
+  (select-thing c ext))
+
+(define-method (floater-hit (c comp) x0 y0 x1 y1)
+  (inside? x0 y0 x1 y1 (comp-x c) (comp-y c)))
+
+;; (floater-hit (comp-symbol c) x0 y0 x1 y1)
+
+(define-struct text-box ()
+  root text (width #f) height x y font color sensitive-color
+  box-item text-item)
+
+(define-method (initialize (tb text-box) args)
+  (next-method)
+  (let* ((w (or (text-box-width tb) 0))
+	 (h (text-box-height tb))
+	 (x (text-box-x tb))
+	 (y (text-box-y tb))
+	 (root (text-box-root tb))
+	 (b (gossip-canvas-item-new root 'GossipCanvasRect
+				    (vector x y (+ x w) (+ y h))
+				    :outline_color "black"
+				    :fill_color (text-box-color tb)
+				    :width_pixels 0))
+	 (t (gossip-canvas-item-new root 'GossipCanvasText
+				    (vector (+ x (/ w 2))
+					    (+ y (/ h 2)))
+				    :text ""
+				    :fill_color "black")))
+    (gossip-canvas-text-set-zoom-fonts t +zoom-fonts+
+				       (text-box-font tb) 1.0 0.3)
+    (set! (text-box-box-item tb) b)
+    (set! (text-box-text-item tb) t)
+    (text-box-set-text tb (text-box-text tb))))
+
+(define (text-box-set-text tb text)
+  (gossip-canvas-item-set (text-box-text-item tb) #f
+			  :text text)
+  (set! (text-box-text tb) text)
+  (cond ((not (text-box-width tb))
+	 (let ((w (togrid (+ (gdk-string-width (vector-ref +zoom-fonts+
+							   (text-box-font tb))
+					       (text-box-text tb)) 10) 5))
+	       (h (text-box-height tb))
+	       (x (text-box-x tb))
+	       (y (text-box-y tb)))
+	   (gossip-canvas-item-set (text-box-box-item tb)
+				   (vector x y (+ x w) (+ y h)))
+	   (gossip-canvas-item-set (text-box-text-item tb)
+				   (vector (+ x (/ w 2)) (+ y (/ h 2))))))))
+
+(define (select-color state)
+  (case state
+    ((selected) "red")
+    ((marked) "blue")
+    (else "black")))
+
+(define (select-width state)
+  (case state
+    ((selected marked) 3)
+    (else 1)))
+  
+(define-method (selection-notify (tb text-box) state)
+  (gossip-canvas-item-set (text-box-box-item tb) #f
+			  :outline_color (select-color state)
+			  :width_pixels (select-width state)))
+
+(define-method (enter-notify (tb text-box))
+  (gossip-canvas-item-set (text-box-box-item tb) #f
+			  :fill_color (text-box-sensitive-color tb)))
+
+(define-method (leave-notify (tb text-box))
+  (gossip-canvas-item-set (text-box-box-item tb) #f
+			  :fill_color (text-box-color tb)))
+
+(define-method (floater-hit (t text-box) x0 y0 x1 y1)
+  (and (inside? x0 y0 x1 y1 (text-box-x t) (text-box-y t))
+       (inside? x0 y0 x1 y1
+		(+ (text-box-x t) (text-box-width t))
+		(+ (text-box-y t) (text-box-height t)))))
+
+(define-struct block-comp (comp)
+  block input-ports output-ports)
+
+(define (block-comp-find-block c)
+  (let ((b (block-comp-block c)))
+    (if (block? b)
+	b
+	(let ((bb (get-block (car b) (cadr b))))
+	  (if (not bb)
+	      (error "no such block" b))
+	  (set! (block-comp-block c) bb)
+	  bb))))
+
+(define (block-show-doc b)
+  (let ((bb (block-comp-block b)))
+    (or (sim-browse-doc (symbol->string (library-name (block-lib bb)))
+			(symbol->string (block-name bb)))
+	(msg "No documentation found."))))
+
+(define block-menu (make popup-menu 
+		     :items `(("Select" ,floater-select)
+			      ("Documentation" ,block-show-doc)
+			      ("Delete" ,destroy))))
+
+(define-method (initialize (self block-comp) args)
+  (next-method)
+  (let* ((block (block-comp-find-block self))
+	 (root (sheet-comp-root *sheet*))
+	 (name (symbol->string (block-name block)))
+	 (inputs (block-inputs block))
+	 (outputs (block-outputs block))
+	 (width (togrid (+ (gdk-string-width (vector-ref +zoom-fonts+
+							 +large-font+)
+					     name)
+			   20)
+			5))
+	 (height (+ 20 (* (max (length inputs) (length outputs)) 20)))
+	 (g (comp-group self))
+	 (eg (comp-event-group self))
+	 (tb (make text-box :root eg :x 0 :y 0 :width width :height height
+		   :text name :font +large-font+
+		   :color +comp-color+
+		   :sensitive-color +sensitive-comp-color+)))
+
+    (do ((in inputs (cdr in))
+	 (y 20 (+ y 20))
+	 (p '() (cons (comp-add-port self
+				     :label (caar in) :multi (cdar in)
+				     :x 0 :y y :px -10 :py 0 :tx -3 :ty -7 
+				     :anchor 'east)
+		      p)))
+	((null? in)
+	 (set! (block-comp-input-ports self) p)))
+
+    (do ((out outputs (cdr out))
+	 (y 20 (+ y 20))
+	 (p '() (cons (comp-add-port self
+				     :label (caar out) :multi (cdar out)
+				     :x width :y y :px 10 :py 0 :tx 3 :ty -7
+				     :anchor 'west)
+		      p)))
+	((null? out)
+	 (set! (block-comp-output-ports self) p)))
+
+    (set! (comp-menu self) block-menu)
+    (set! (comp-symbol self) tb)
+    (comp-enable-props-text self 3 (+ height 5))
+    (let* ((gens (block-generics block))
+	   (gens-with-name (if (memq 'name gens) gens (cons 'name gens))))
+      (set! (comp-props self)
+	    (map (lambda (g) (list g "" #f)) gens-with-name)))))
+
+(define-method (dump-state (c block-comp))
+  (list 'block-comp
+	(comp-props c) (comp-x c) (comp-y c)
+	:block (list (block-name (block-comp-block c))
+		     (library-name (block-lib (block-comp-block c))))))
+
+(define (comp-create-from-state type vals x y . args)
+  (let* ((class (assoc-ref comp-classes type))
+	 (c (apply make class :x x :y y args)))
+    (update-props (comp-props c) vals)
+    (instantiate c)
+    c))
+
+(define-method (port-bus-width-using-component p (c block-comp))
+  (if (port-multi p) #f 1))
+
+(define-method (emit-component (c block-comp))
+  (let* ((b (block-comp-block c)))
+    (define (inst-args)
+      (define (gen->kw g)
+	(if (> (string-length (cadr g)) 0)
+	    (@@ " :~a ~a" (car g) (cadr g))
+	    ""))
+      (define (port->kw p)
+	(@@ " :~a ~a" (port-name p) (port-signal-id p)))
+      (define (map-strings func list)
+	(apply string-append (map func list)))
+      (@@ "~a~a"
+	  (map-strings gen->kw (comp-props c))
+	  (map-strings port->kw (comp-ports c))))
+    (@ "  (lib-~a-~a~a)"
+       (library-name (block-lib b)) (block-name b) (inst-args))))
+
+(define-struct generic-comp (comp))
+
+(define-method (initialize (g generic-comp) args)
+  (next-method)
+  (let* ((eg (comp-event-group g)))
+    (set! (comp-symbol g)
+	  (make text-box :root eg :x 0 :y 0
+		:height 20 :text "" :font +medium-font+
+		:color "#FFFF55" :sensitive-color "#FFFFAA"))
+    (set! (comp-props g) (list (list 'name "" #f)
+			       (list 'default "" #f)))))
+
+(define-method (commit (g generic-comp))
+  (let ((name (car (assoc-ref (comp-props g) 'name)))
+	(default (car (assoc-ref (comp-props g) 'default))))
+    (text-box-set-text (comp-symbol g)
+		       (if (> (string-length default) 0)
+			   (string-append name " (" default ")")
+			   name))))
+
+(define-method (dump-state (g generic-comp))
+  (list 'generic-comp (comp-props g) (comp-x g) (comp-y g)))
+
+(define-method (emit-component (g generic-comp))
+  #t)
+
+(define-struct result-comp (comp))
+
+(define-method (initialize (r result-comp) args)
+  (next-method)
+  (let* ((eg (comp-event-group r)))
+    (set! (comp-symbol r)
+	  (make text-box :root eg :x 0 :y 0
+		:height 20 :text "" :font +medium-font+
+		:color "#FF55FF" :sensitive-color "#FFAAFF"))
+    (set! (comp-props r) (list (list 'name "" #f)
+			       (list 'value "" #f)))))
+
+(define (result-name r)
+  (string->symbol (car (assoc-ref (comp-props r) 'name))))
+
+(define (result-value r)
+  (car (assoc-ref (comp-props r) 'value)))
+
+(define-method (commit (r result-comp))
+  (text-box-set-text (comp-symbol r)
+		     (string-append (result-name r) " = " (result-value r))))
+
+(define-method (dump-state (r result-comp))
+  (list 'result-comp (comp-props r) (comp-x r) (comp-y r)))
+
+(define-method (emit-component (r result-comp))
+  #t)
+
+(define-struct pad-comp (comp)
+  port type)
+
+(define-struct pad-box ()
+  item)
+
+(define (make-pad-box root x y dir)
+  (let ((pb (make pad-box)))
+    (set! (pad-box-item pb)
+	  (gossip-canvas-item-new root 'GossipCanvasPolygon
+				  (if (eq? dir 'in)
+				      (vector x y (+ x 15) y 
+					      (+ x 20) (+ y 5)
+					      (+ x 15) (+ y 10)
+					      x (+ y 10))
+				      (vector x (+ y 5) (+ x 5) y
+					      (+ x 20) y
+					      (+ x 20) (+ y 10)
+					      (+ x 5) (+ y 10)))
+				  :fill_color +comp-color+
+				  :outline_color "black"
+				  :width_pixels 0))
+    pb))
+
+(define-method (selection-notify (pb pad-box) state)
+  (gossip-canvas-item-set (pad-box-item pb) #f
+			  :outline_color (select-color state)
+			  :width_pixels (select-width state)))
+
+(define-method (enter-notify (pb pad-box))
+  (gossip-canvas-item-set (pad-box-item pb) #f
+			  :fill_color +sensitive-comp-color+))
+
+(define-method (leave-notify (pb pad-box))
+  (gossip-canvas-item-set (pad-box-item pb) #f
+			  :fill_color +comp-color+))
+
+(define (pad-initialize p type dir multi)
+  (let* ((eg (comp-event-group p)))
+    (set! (comp-symbol p) (make-pad-box eg 0 0 dir))
+    (set! (pad-comp-port p)
+	  (if (eq? dir 'in)
+	      (comp-add-port p
+			     :label (string->symbol "") :multi multi
+			     :x 20 :y 5 :px 10 :py 0
+			     :tx -22 :ty 0 :anchor 'east)
+	      (comp-add-port p
+			     :label (string->symbol "") :multi multi
+			     :x 0 :y 5 :px -10 :py 0
+			     :tx 22 :ty 0 :anchor 'west)))
+    (set! (comp-props p) (list (list 'name "" #f)))
+    (set! (pad-comp-type p) type)))
+
+(define-method (commit (p pad-comp))
+  (let ((name (car (assoc-ref (comp-props p) 'name))))
+    (port-set-name (pad-comp-port p) (string->symbol name))))
+
+(define-method (dump-state (p pad-comp))
+  (list (pad-comp-type p) (comp-props p) (comp-x p) (comp-y p)))
+
+(define-method (port-bus-width-using-component p (c pad-comp))
+  (if (port-multi p) `(length ,(port-name p)) 1))
+
+(define-method (emit-component (c pad-comp))
+  (@ "  ~a"
+     (if (or (input-pad? c) (input-multi-pad? c))
+	 `(connect-signals ,(port-name (pad-comp-port c))
+			   ,(port-signal-id (pad-comp-port c)))
+	 `(connect-signals ,(port-signal-id (pad-comp-port c))
+			   ,(port-name (pad-comp-port c))))))
+
+(define-struct input-pad (pad-comp))
+
+(define-method (initialize (p input-pad) args)
+  (next-method)
+  (pad-initialize p 'input-pad 'in #f))
+
+(define-struct output-pad (pad-comp))
+
+(define-method (initialize (p output-pad) args)
+  (next-method)
+  (pad-initialize p 'output-pad 'out #f))
+
+(define-struct input-multi-pad (pad-comp))
+
+(define-method (initialize (p input-multi-pad) args)
+  (next-method)
+  (pad-initialize p 'input-multi-pad 'in #t))
+
+(define-struct output-multi-pad (pad-comp))
+
+(define-method (initialize (p output-multi-pad) args)
+  (next-method)
+  (pad-initialize p 'output-multi-pad 'out #t))
+
+(define-struct line-box ()
+  item x y)
+
+(define (make-line-box root x y n)
+  (let ((l (make line-box 
+	     :x x :y y
+	     :item (gossip-canvas-item-new root 'GossipCanvasLine
+					   (vector x y x y)
+					   :fill_color "black"
+					   :width_pixels 3))))
+    (line-box-set-len l n)
+    l))
+
+(define (line-box-set-len l n)
+  (if (< n 1)
+      (line-box-set-len l 1)
+      (let ((x (line-box-x l))
+	    (y (line-box-y l)))
+	(gossip-canvas-item-set (line-box-item l)
+				(vector x (- y (* (1- n) 5) 5)
+					x (+ y (* (1- n) 5) 6))))))
+
+(define-method (selection-notify (l line-box) state)
+  (gossip-canvas-item-set (line-box-item l) #f
+			  :fill_color (select-color state)))
+
+(define-method (enter-notify (l line-box))
+  (gossip-canvas-item-set (line-box-item l) #f
+			  :fill_color "grey50"))
+
+(define-method (leave-notify (l line-box))
+  (gossip-canvas-item-set (line-box-item l) #f
+			  :fill_color "black"))
+
+(define-struct multiplexer (comp)
+  (taps #f)   ; in reverse order (bottom up)
+  bus-port (next-id 1) (tap-off -10))
+
+(define (multiplexer-grow-one m)
+  (multiplexer-grow m 1))
+
+(define (multiplexer-grow-five m)
+  (multiplexer-grow m 5))
+
+(define (multiplexer-shrink m)
+  (let ((dn 0))
+    (do ((t (multiplexer-taps m) (cdr t)))
+	((null? t))
+      (let ((p (car t)))
+	(cond ((null? (blob-wires (car t)))
+	       (set! dn (1+ dn))
+	       (comp-remove-port m p)
+	       (set! (multiplexer-taps m) (delq p (multiplexer-taps m))))
+	      (else
+	       (port-move p 0 (* dn 10))))))
+    (do ((t (multiplexer-taps m) (cdr t)))
+	((null? t))
+      (port-move (car t) 0 (* dn -5)))
+    (line-box-set-len (comp-symbol m) (length (multiplexer-taps m)))))
+
+(define multiplexer-menu (make popup-menu 
+			   :items `(("Grow 1" ,multiplexer-grow-one)
+				    ("Grow 5" ,multiplexer-grow-five)
+				    ("Shrink" ,multiplexer-shrink)
+				    ("Delete" ,destroy))))
+
+(define-method (initialize (m multiplexer) args)
+  (next-method)
+  (set! (comp-menu m) multiplexer-menu)
+  (set! (comp-symbol m) (make-line-box (comp-event-group m) 0 0 0))
+  (set! (multiplexer-bus-port m)
+	(comp-add-port m
+		       :label 'b :x 0 :y 0 
+		       :px (- (multiplexer-tap-off m)) :py 0
+		       :multi #t))
+  (let ((t (multiplexer-taps m)))
+    (set! (multiplexer-taps m) '())
+    (if t
+	(multiplexer-realize-ports m t)
+	(multiplexer-grow m 2))))
+
+(define-method (dump-state (m multiplexer))
+  (list 'multiplexer (comp-props m) (comp-x m) (comp-y m) 
+	:taps (map port-name (multiplexer-taps m))))
+
+(define-method (port-bus-width-using-component p (c multiplexer))
+  (if (eq? p (multiplexer-bus-port c)) (length (multiplexer-taps c)) 1))
+
+(define-method (emit-component (c multiplexer))
+  (@ "  ~a"
+     `(connect-signals (list ,@(map port-signal-id (reverse
+						    (multiplexer-taps c))))
+		       ,(port-signal-id (multiplexer-bus-port c)))))
+
+(define (multiplexer-realize-ports m port-names)
+  (multiplexer-grow m (length port-names))
+  (for-each (lambda (p n)
+	      (port-set-name p n))
+	    (multiplexer-taps m) port-names))
+
+(define (multiplexer-grow m n)
+  (for-each (lambda (p)
+	      (port-move p 0 (* n -5)))
+	    (multiplexer-taps m))
+  (do ((id (multiplexer-next-id m) (1+ id))
+       (y (* (- (length (multiplexer-taps m)) n -1) 5) (+ y 10))
+       (i 0 (1+ i)))
+      ((= i n) (set! (multiplexer-next-id m) id))
+    (set! (multiplexer-taps m)
+	  (cons (comp-add-port  m
+				:label (string->symbol (format #f "o~a" id))
+				:x 0 :y y :px (multiplexer-tap-off m) :py 0)
+		(multiplexer-taps m))))
+  (line-box-set-len (comp-symbol m) (length (multiplexer-taps m))))
+
+(define-struct demultiplexer (multiplexer))
+
+(define-method (initialize (d demultiplexer) args)
+  (set! (multiplexer-tap-off d) 10)
+  (next-method))
+
+(define-method (dump-state (d demultiplexer))
+  (list 'demultiplexer (comp-props d) (comp-x d) (comp-y d) 
+	:taps (map port-name (multiplexer-taps d))))
+
+(define-method (emit-component (c demultiplexer))
+  (@ "  ~a"
+     `(connect-signals ,(port-signal-id (multiplexer-bus-port c))
+		       (list ,@(map port-signal-id (reverse
+						    (multiplexer-taps c)))))))
+
+(define-struct terminator (comp)
+  port)
+
+(define-method (initialize (t terminator) args)
+  (next-method)
+  (set! (comp-symbol t) (make-line-box (comp-event-group t) 0 0 1))
+  (comp-add-port t :label 'in :x 0 :y 0 :px -10 :py 0))
+
+(define-method (emit-component (t terminator))
+  #t)
+
+(define-method (dump-state (t terminator))
+  (list 'terminator (comp-props t) (comp-x t) (comp-y t)))
+  
+(define-struct wire-delay (comp)
+  input output)
+
+(define-method (initialize (w wire-delay) args)
+  (next-method)
+  (set! (comp-symbol w) (make text-box :root (comp-event-group w)
+			      :x 0 :y 0 :width 10 :height 10
+			      :text "" :font +small-font+
+			      :color "black" :sensitive-color "grey50"))
+  (set! (wire-delay-input w) 
+	(comp-add-port w :label 'a :x 0 :y 5 :px -10 :py 0))
+  (set! (wire-delay-output w) 
+	(comp-add-port w :label 'b :x 10 :y 5 :px 10 :py 0))
+  (comp-enable-props-text w 3 15)
+  (set! (comp-props w) (list (list 'delay "" #f)
+			     (list 'chunk-delay "" #f))))
+
+(define-method (dump-state (w wire-delay))
+  (list 'wire-delay (comp-props w) (comp-x w) (comp-y w)))
+
+(define *delays-in-bus-width-query* '())
+
+(define (call-in-bus-query w thunk)
+  (let ((wq *delays-in-bus-width-query*))
+    (dynamic-wind
+	(lambda ()
+	  (set! *delays-in-bus-width-query* (cons w wq)))
+	thunk
+	(lambda ()
+	  (set! *delays-in-bus-width-query* wq)))))
+
+(define-method (port-bus-width-using-component p (c wire-delay))
+  (cond ((memq c *delays-in-bus-width-query*)
+	 #f)
+	(else
+	 (call-in-bus-query c
+	  (lambda ()
+	    (get-bus-width (get-connected-ports
+			    (if (eq? p (wire-delay-input c))
+				(wire-delay-output c)
+				(wire-delay-input c)))
+			   'id))))))
+
+(define-method (emit-component (c wire-delay))
+  (let ()
+    (define (gen->kw g)
+      (if (> (string-length (cadr g)) 0)
+	  (@@ " :~a ~a" (car g) (cadr g))
+	  ""))
+    (define (map-strings func list)
+      (apply string-append (map func list)))
+    (@ "  (connect-signals (sig ~a~a) ~a)"
+       (port-signal-id (wire-delay-input c))
+       (map-strings gen->kw (comp-props c))
+       (port-signal-id (wire-delay-output c)))))
+
+(define comp-classes
+  `((block-comp . ,block-comp)
+    (generic-comp . ,generic-comp)
+    (result-comp . ,result-comp)
+    (input-pad . ,input-pad)
+    (output-pad . ,output-pad)
+    (input-multi-pad . ,input-multi-pad)
+    (output-multi-pad . ,output-multi-pad)
+    (multiplexer . ,multiplexer)
+    (demultiplexer . ,demultiplexer)
+    (wire-delay . ,wire-delay)
+    (terminator . ,terminator)))
+
+(define-struct blob ()
+  (wires '()) item x y (new #t) (id #f))
+
+(define-struct port (blob)
+  comp name (multi #f) (text-item #f) (line-item #f) (signal-id #f))
+
+(define (port-set-name p n)
+  (set! (port-name p) n)
+  (if (port-text-item p)
+      (gossip-canvas-item-set (port-text-item p) #f
+			      :text (symbol->string n))))
+
+(define (port-move p dx dy)
+  (move-floater-items (floater-items p) dx dy)
+  (gossip-canvas-item-move (port-line-item p) dx dy)
+  (set! (blob-x p) (+ (blob-x p) dx))
+  (set! (blob-y p) (+ (blob-y p) dy)))
+
+(define-struct wire ()
+  blobs item (props '()))
+
+(define-method (floater-items (w wire))
+  '())
+
+(define-method (floater-place (w wire) x y)
+  #f)
+
+(define-method (floater-cancel (w wire))
+  #f)
+
+(define-method (floater-hit (w wire) x0 y0 x1 y1)
+  (and (wire-blob w 0) (blob-hit (wire-blob w 0) x0 y0 x1 y1)
+       (wire-blob w 1) (blob-hit (wire-blob w 1) x0 y0 x1 y1)))
+
+(define (blob-update b raise-lower?)
+  (if (blob-item b)
+      (let ((l (+ (length (blob-wires b)) (if (port? b) 1 0))))
+	(cond ((< l 2)
+	       (if raise-lower?
+		   (gossip-canvas-item-raise-to-top (blob-item b)))
+	       (gossip-canvas-item-set (blob-item b) #f
+				       :fill_color +blob-color+))
+	      ((< l 3)
+	       (if raise-lower?
+		   (begin
+		     (gossip-canvas-item-lower-to-bottom (blob-item b))
+		     (gossip-canvas-item-raise (blob-item b) 1)))
+	       (gossip-canvas-item-set (blob-item b) #f
+				       :fill_color
+				       (if *show-blobs*
+					   +semi-transparent-blob-color+
+					   +transparent-blob-color+)))
+	      (else
+	       (if raise-lower?
+		   (gossip-canvas-item-raise-to-top (blob-item b)))
+	       (gossip-canvas-item-set (blob-item b) #f
+				       :fill_color +connected-blob-color+))))))
+
+(define (toggle-show-blobs)
+  (set! *show-blobs* (not *show-blobs*))
+  (for-each (lambda (b) (blob-update b #f)) *blobs*))
+
+(define (blob-coords x y)
+  (vector (- x +blob-radius+) (- y +blob-radius+)
+	  (+ x +blob-radius+ 1) (+ y +blob-radius+ 1)))
+
+(define-method (initialize (b blob) args)
+  (next-method)
+  (let ((item (gossip-canvas-item-new (sheet-blob-root *sheet*)
+				      'GossipCanvasEllipse
+				      (blob-coords (blob-x b)
+						   (blob-y b))
+				      :fill_color +blob-color+
+				      :outline_color "")))
+
+    (define (blob-notify op button state x y)
+      (gesture-case (op button state x y)
+       ((popup 3)
+	(popup blob-menu b))
+       ((click 1)
+	(select-thing b (memq 'control-mask state)))
+       ((drag-start 1)
+	(blob-float b x y #f))
+       ((drag-update 1)
+	(gto-canvas-move-floater *canvas* x y))
+       ((drag-cancel 1)
+	(gto-canvas-cancel-floater *canvas*))
+       ((drag-stop 1)
+	(gto-canvas-place-floater *canvas*))
+       ((drag-start 2)
+	(start-wire x y b))
+       ((drag-update 2)
+	(gto-canvas-move-floater *canvas* x y))
+       ((drag-cancel 2)
+	(gto-canvas-cancel-floater *canvas*))
+       ((drag-stop 2)
+	(gto-canvas-place-floater *canvas*))))
+
+    (gto-canvas-attach-handler *canvas* item blob-notify)
+
+;;     (gtk-signal-connect item "event"
+;; 			(lambda (ev)
+;; 			  (case (gdk-event-type ev)
+;; 			    ((enter-notify)
+;; 			     (gossip-canvas-item-set
+;; 			      item #f :fill_color +sensitive-blob-color+))
+;; 			    ((leave-notify)
+;; 			     (blob-update b #f))
+;; 			    ((button-press)
+;; 			     (case (gdk-event-button ev)
+;; 			       ((1)
+;; 				(let ((x (gdk-event-x ev))
+;; 				      (y (gdk-event-y ev)))
+;; 				  (if (< (length (blob-wires b)) 2)
+;; 				      (start-wire x y b)
+;; 				      (blob-float b x y #f))))
+;; 			       ((2)
+;; 				(let ((x (gdk-event-x ev))
+;; 				      (y (gdk-event-y ev)))
+;; 				  (if (< (length (blob-wires b)) 2)
+;; 				      (blob-float b x y #f)
+;; 				      (start-wire x y b))))
+;; 			       ((3)
+;; 				(popup blob-menu b)))))))
+
+    (set! (blob-item b) item)
+    (set! *blobs* (cons b *blobs*))))
+
+(define-method (dump-state (b blob))
+  (list :x (blob-x b) :y (blob-y b)))
+
+(define-method (dump-state (p port))
+  (list :comp (comp-id (port-comp p)) :name (port-name p)))
+
+(define (blob-create-from-state comps . args)
+  (let-keywords args #f ((x #f) (y #f)
+			 (comp #f) (name #f))
+		(if comp
+		    (let ((c (list-ref comps comp)))
+		      (if c
+			  (find-comp-port c name)
+			  #f))
+		    (make blob :x x :y y :new #f))))
+
+(define (wire-blob w id)
+  (vector-ref (wire-blobs w) id))
+
+(define (wire-set-blob w id b)
+  (vector-set! (wire-blobs w) id b))
+
+(define (multi-wire? b0 b1)
+  (and (port? b0) (port? b1)
+       (port-multi b0) (port-multi b1)))
+
+(define-method (initialize (w wire) args)
+  (next-method)
+  (let* ((b0 (wire-blob w 0))
+	 (b1 (wire-blob w 1))
+	 (item (gossip-canvas-item-new (sheet-wire-root *sheet*)
+				       'GossipCanvasLine
+				       (vector (blob-x b0)
+					       (blob-y b0)
+					       (blob-x b1)
+					       (blob-y b1))
+				       :fill_color "black"
+				       :width_pixels 0
+				       :hit_width 10))
+	 (split-blob #f))
+
+    (define (wire-notify op button state x y)
+      (gesture-case (op button state)
+	((popup 3)
+	 (popup wire-menu w))
+        ((click 1)
+	 (select-thing w (memq 'control-mask state)))
+	((drag-start 1)
+	 (set! split-blob (split-wire w (togrid x 5) (togrid y 5)))
+	 (blob-float split-blob x y))
+	((drag-update 1)
+	 (gto-canvas-move-floater *canvas* x y))
+	((drag-cancel 1)
+	 (gto-canvas-cancel-floater *canvas*)
+	 (unsplit-wire split-blob))
+	((drag-stop 1)
+	 (gto-canvas-place-floater *canvas*))
+	((drag-start 2)
+	 (set! split-blob (split-wire w (togrid x 5) (togrid y 5)))
+	 (start-wire x y split-blob))
+	((drag-update 2)
+	 (gto-canvas-move-floater *canvas* x y))
+	((drag-cancel 2)
+	 (gto-canvas-cancel-floater *canvas*)
+	 (unsplit-wire split-blob))
+	((drag-stop 2)
+	 (gto-canvas-place-floater *canvas*))))
+
+    (gto-canvas-attach-handler *canvas* item wire-notify)
+
+;;     (gtk-signal-connect item "event"
+;; 			(lambda (ev)
+;; 			  (case (gdk-event-type ev)
+;; 			    ((enter-notify)
+;; 			     (if (not (wire-selected w))
+;; 				 (gossip-canvas-item-set
+;; 				  item #f :fill_color "grey50")))
+;; 			    ((leave-notify)
+;; 			     (if (not (wire-selected w))
+;; 				 (gossip-canvas-item-set
+;; 				  item #f :fill_color "black")))
+;; 			    ((button-press)
+;; 			     (case (gdk-event-button ev)
+;; 			       ((1)
+;; 				(wire-select 
+;; 				 w 
+;; 				 (memq 'shift-mask
+;; 				       (gdk-event-state ev))))
+;; 			       ((3)
+;; 				(popup wire-menu w)))))))
+
+    (set! (wire-item w) item)
+    (set! *wires* (cons w *wires*))))
+
+(define-method (selection-notify (w wire) state)
+  (gossip-canvas-item-set (wire-item w) #f :fill_color (select-color state))
+  (case state
+    ((selected)
+     (activate-props (wire-props w) #f))
+    ((marked none)
+     (activate-props #f #f))))
+
+(define (wire-select w ext)
+  (select-thing w ext))
+
+(define (wire-selected w)
+  (eq? *selected-thing* w))
+
+(define (wire-update-props w vals)
+  (update-props (wire-props w) vals))
+
+(define-method (dump-state (w wire))
+  (list (blob-id (wire-blob w 0)) (blob-id (wire-blob w 1))
+	:props (wire-props w)))
+
+(define (wire-create-from-state blobs id0 id1 . rest)
+  (let* ((b0 (list-ref blobs id0))
+	 (b1 (list-ref blobs id1)))
+    (if (and b0 b1)
+	(let-keywords rest #f ((props '()))
+		      (let ((w (make wire :blobs (vector b0 b1))))
+			(blob-connect b0 w 0)
+			(blob-connect b1 w 1)
+			(wire-update-props w props)
+			w))
+	#f)))
+
+(define-method (floater-items (b blob))
+  (cons (blob-item b)
+	(map (lambda (w)
+	       (cons (wire-item (car w)) (cdr w)))
+	     (blob-wires b))))
+
+(define-method (floater-place (b blob) dx dy)
+  (dirty!)
+  (let ((x (+ (blob-x b) dx))
+	(y (+ (blob-y b) dy)))
+    (set! (blob-x b) x)
+    (set! (blob-y b) y)
+    (let ((t (find-target x y (cons b *marked-things*))))
+      (cond (t
+	     (merge-blobs b t))
+	    (else
+	     (set! (blob-new b) #f))))))
+
+(define-method (floater-cancel (b blob))
+  (if (blob-new b)
+      (blob-destroy b)))
+
+(define-method (floater-select (b blob) ext)
+  (select-thing b ext))
+
+(define-method (floater-hit (b blob) x0 y0 x1 y1)
+  (blob-hit b x0 y0 x1 y1))
+
+(define (blob-hit b x0 y0 x1 y1)
+  (inside? x0 y0 x1 y1 (blob-x b) (blob-y b)))
+
+(define-method (floater-hit (p port) x0 y0 x1 y1)
+  #f)
+
+(define-method (selection-notify (b blob) state)
+  #t)
+
+(define (blob-float b x y . rest)
+  (let-optional rest ((stick? #t))
+    (if (not (port? b))
+	(gto-canvas-set-floater *canvas* b x y (blob-x b) (blob-y b)
+				#f stick?))))
+
+(define (reachable? b1 b2)
+  (define (reachable1 b1 b2 not-w)
+    (let loop ((w (blob-wires b1)))
+      (cond ((null? w)
+	     #f)
+	    ((eq? (caar w) not-w)
+	     (loop (cdr w)))
+	    (else
+	     (let ((b (wire-blob (caar w) (- 1 (cdar w)))))
+	       (if (or (eq? b b2) (reachable1 b b2 (caar w)))
+		   #t
+		   (loop (cdr w))))))))
+  (reachable1 b1 b2 #f))
+
+(define (wire-peer w)
+  (wire-blob (car w) (- 1 (cdr w))))
+
+(define (merge-blobs b1 b2)
+  (cond
+   ;;((reachable? b1 b2)
+   ;; #f)
+   ((port? b1)
+    (if (port? b2)
+	(merge-ports b1 b2)
+	(merge-blobs b2 b1)))
+   (else
+    (let loop ((w1 (blob-wires b1))
+	       (w2 '()))
+      (cond ((null? w1)
+	     (set! (blob-wires b2) (append! w2 (blob-wires b2)))
+	     (set! (blob-wires b1) '())
+	     (blob-update b2 #t)
+	     (blob-destroy b1)
+	     #t)
+	    ((eq? (wire-peer (car w1)) b2)
+	     (wire-destroy (caar w1))
+	     (loop (cdr w1) w2))
+	    (else
+	     (vector-set! (wire-blobs (caar w1)) (cdar w1) b2)
+	     (loop (cdr w1) (cons (car w1) w2))))))))
+
+(define (merge-ports p1 p2)
+  ;; Unless there is a direct wire from p1 to p2, add one.
+  (or (or-map (lambda (w) (eq? (wire-peer w) p2))
+	      (blob-wires p1))
+      (let ((w (make wire :blobs (vector p1 p2))))
+	(blob-connect p1 w 0)
+	(blob-connect p2 w 1)
+	#t)))
+
+(define (blob-destroy b)
+  (dirty!)
+  (for-each (lambda (w) (wire-destroy (car w))) (blob-wires b))
+  (cond ((not (port? b))
+	 (unselect-thing b)
+	 (destroy-item! (blob-item b))
+	 (set! *blobs* (delq! b *blobs*)))))
+
+(define (port-destroy b)
+  (for-each (lambda (w) (wire-destroy (car w))) (blob-wires b))
+  (destroy-item! (blob-item b))
+  (set! *blobs* (delq! b *blobs*)))
+
+(define (blob-connect b w id)
+  (set! (blob-wires b) (cons (cons w id) (blob-wires b)))
+  (blob-update b #t))
+
+(define (blob-disconnect b w)
+  (set! (blob-wires b)
+	(remove-if (lambda (ww) (eq? (car ww) w)) (blob-wires b)))
+  (blob-update b #t))
+
+(define (wire-destroy w)
+  (dirty!)
+  (unselect-thing w)
+  (blob-disconnect (wire-blob w 0) w)
+  (blob-disconnect (wire-blob w 1) w)
+  (destroy-item! (wire-item w))
+  (set! *wires* (delq! w *wires*)))
+
+(define (blob-select b)
+  (floater-select b #t))
+
+(define wire-menu (make popup-menu
+		    :items `(("Delete Wire" ,wire-destroy))))
+
+(define (start-wire x y b0)
+  (let* ((b1 (make blob :x (blob-x b0) :y (blob-y b0)))
+	 (w (make wire :blobs (vector b0 b1))))
+    (blob-connect b0 w 0)
+    (blob-connect b1 w 1)
+    (blob-float b1 x y)))
+
+(define (split-wire w1 x y)
+  (let* ((b0 (wire-blob w1 0))
+	 (b1 (make blob :x x :y y :new #f))
+	 (w0 (make wire :blobs (vector b0 b1)))
+	 (dx (- x (blob-x b0)))
+	 (dy (- y (blob-y b0))))
+    (wire-set-blob w1 0 b1)
+    (blob-disconnect b0 w1)
+    (blob-connect b0 w0 0)
+    (blob-connect b1 w0 1)
+    (blob-connect b1 w1 0)
+    (gossip-canvas-line-move-point (wire-item w1) 0 dx dy)
+    b1))
+
+(define (unsplit-wire b)
+  (let ((wires (blob-wires b)))
+    (cond 
+     ((not (= (length wires) 2))
+      #f)
+     (else
+      (let* ((w0 (caar wires))
+	     (i0 (cdar wires))
+	     (w1 (caadr wires))
+	     (i1 (cdadr wires))
+	     (b0 (wire-blob w0 (- 1 i0)))
+	     (dx (- (blob-x b0) (blob-x b)))
+	     (dy (- (blob-y b0) (blob-y b))))
+	(blob-disconnect b w1)
+	(blob-destroy b)
+	(blob-connect b0 w1 i1)
+	(wire-set-blob w1 i1 b0)
+	(gossip-canvas-line-move-point (wire-item w1) i1 dx dy)
+	#t)))))
+
+(define blob-menu (make popup-menu
+		    :items `(("Merge Wires" ,unsplit-wire)
+			     ("Delete Blob" ,blob-destroy))))
+
+(define (find-target x y ignore)
+  (define (match-blob b)
+    (and (not (memq b ignore))
+	 (and (= (blob-x b) x) (= (blob-y b) y) b)))
+  (or-map match-blob *blobs*))
+
+(define (activate-block b)
+  (if *canvas*
+      (if *sheet*
+	  (if b
+	      (gto-canvas-set-floater *canvas*
+				      (make block-comp :block b :floating #t 
+					    :x 0 :y 0)
+				      0 0 0 0 #t #t)
+	      (gto-canvas-cancel-floater *canvas*))
+	  (msg "No schematic selected."))))
+
+;;; Generics
+
+(define-struct gto-proplist ()
+  (props '()) (vals '()) (object #f)
+  max-rows widget (table #f) labels buttons entries)
+
+(define-method (initialize (p gto-proplist) args)
+  (next-method)
+  (set! (gto-proplist-widget p) (gtk-scrolled-window-new))
+  (gtk-scrolled-window-set-policy (gto-proplist-widget p)
+				  'automatic 'automatic))
+
+(define *in-proplist-update* #f)
+
+(define (make-proptable p max-rows)
+  (let ((t (gtk-table-new max-rows 2 #f))
+	(ls (make-vector max-rows))
+	(bs (make-vector max-rows))
+	(es (make-vector max-rows)))
+    (gtk-table-set-col-spacing t 0 4)
+    (do ((i 0 (1+ i)))
+	((= i max-rows))
+      (let ((l (gtk-label-new ""))
+	    (b (gtk-toggle-button-new))
+	    (e (gtk-entry-new)))
+	(gtk-misc-set-alignment l 1.0 0.5)
+	(vector-set! ls i l)
+	(vector-set! bs i b)
+	(vector-set! es i e)
+	(gtk-container-add b l)
+	(gtk-table-attach-defaults t b 0 1 i (1+ i))
+	(gtk-table-attach-defaults t e 1 2 i (1+ i))
+	(gtk-signal-connect e "activate"
+			    (lambda ()
+			      (gto-proplist-commit p)))
+    	(gtk-signal-connect b "clicked"
+			    (lambda ()
+			      (if (not *in-proplist-update*)
+				  (gto-proplist-commit p))))))
+    (set! (gto-proplist-max-rows p) max-rows)
+    (set! (gto-proplist-table p) t)
+    (set! (gto-proplist-labels p) ls)
+    (set! (gto-proplist-buttons p) bs)
+    (set! (gto-proplist-entries p) es)
+    (let ((v (gtk-vbox-new #f 0)))
+      (gtk-widget-show t)
+      (gtk-widget-show v)
+      (gtk-box-pack-start v t #f #f 0)
+      (gtk-scrolled-window-add-with-viewport (gto-proplist-widget p) v))))
+
+(define (set-proptable-len p len)
+  (if (not (gto-proplist-table p))
+      (make-proptable p 30))
+  (do ((i 0 (1+ i)))
+      ((= i (gto-proplist-max-rows p)))
+    (for-each (if (< i len) gtk-widget-show gtk-widget-hide)
+	      (list (vector-ref (gto-proplist-labels p) i)
+		    (vector-ref (gto-proplist-buttons p) i)
+		    (vector-ref (gto-proplist-entries p) i)))))
+
+(define (gto-proplist-set p props obj)
+  (set! (gto-proplist-props p) props)
+  (set! (gto-proplist-object p) obj)
+  (gto-proplist-update p))
+
+(define (gto-proplist-update p)
+  (let* ((props (gto-proplist-props p))
+	 (len (length props)))
+    (set! *in-proplist-update* #t)
+    (set-proptable-len p len)
+    (do ((i 0 (1+ i))
+	 (c props (cdr c)))
+	((= i len))
+      (gtk-label-set-text (vector-ref (gto-proplist-labels p) i)
+			  (symbol->string (caar c)))
+      ;; Setting the state triggers the clicked signal.  How silly.
+      (gtk-toggle-button-set-state (vector-ref (gto-proplist-buttons p) i)
+				   (caddar c))
+      (gtk-entry-set-text (vector-ref (gto-proplist-entries p) i) 
+			  (cadar c)))
+    (set! *in-proplist-update* #f)))
+
+
+(define (gto-proplist-commit p)
+  (do ((i 0 (1+ i))
+       (c (gto-proplist-props p) (cdr c)))
+      ((null? c))
+    (let ((oldval (cadr (car c)))
+	  (newval (gtk-entry-get-text 
+		   (vector-ref (gto-proplist-entries p) i))))
+      (if (not (string=? oldval newval))
+	  (dirty!))
+      (set-car! (cdar c) newval))
+    (let ((oldval (caddr (car c)))
+	  (newval (gtk-toggle-button-active 
+		   (vector-ref (gto-proplist-buttons p) i))))
+      (if (not (eq? oldval newval))
+	  (dirty!))
+      (set-car! (cddar c) newval)))
+  (if (gto-proplist-object p)
+      (commit (gto-proplist-object p))))
+
+(define (update-props props vals)
+  (for-each (lambda (p)
+	      (let ((n (assq (car p) vals)))
+		(cond (n
+		       (set-car! (cdr p) (cadr n))
+		       (set-car! (cddr p) (caddr n))))))
+	    props))
+
+(define (make-set-tab)
+  (set! *generics* (make gto-proplist))
+  (gto-proplist-widget *generics*))
+
+(define (activate-props p obj)
+  (gto-proplist-commit *generics*)
+  (if p
+      (gto-proplist-set *generics* p obj)
+      (gto-proplist-set *generics* *props* #f)))
+
+(define set-zoom #f)
+(define get-zoom #f)
+
+(define (make-zoom-tab)
+  (let* ((vbox (gtk-vbox-new #f 2))
+	 (adj (gtk-adjustment-new 1 0.46 1.7 0.001 0.001 0.001))
+	 (scl (gtk-hscale-new adj))
+	 (entry (gtk-entry-new))
+	 (b1 (gtk-button-new-with-label "Zoom In"))
+	 (b2 (gtk-button-new-with-label "Zoom Out"))
+	 (b3 (gtk-button-new-with-label "Zoom Small"))
+	 (b4 (gtk-button-new-with-label "Zoom Normal"))
+	 (b5 (gtk-button-new-with-label "Toggle Blobs")))
+
+    (define (zoom-func z) (expt z 3))
+    (define (zoom-func-1 z) (expt z 1/3))
+
+    (define (inc-zoom dz)
+      (set-zoom (* (zoom-func (gtk-adjustment-value adj)) dz)))
+    
+    (define (zoom-in)
+      (inc-zoom 2))
+    
+    (define (zoom-out)
+      (inc-zoom 0.5))
+
+    (define (zoom-full)
+      (set-zoom 0.2))
+
+    (set! set-zoom
+	  (lambda (z)
+	    (if (> z 0) (gtk-adjustment-set-value adj (zoom-func-1 z)))))
+
+    (set! get-zoom
+	  (lambda ()
+	    (zoom-func (gtk-adjustment-value adj))))
+
+    (gtk-scale-set-draw-value scl #f)
+    (gtk-scale-set-digits scl 20)
+    (gtk-box-pack-start vbox scl #f #f 0)
+    (gtk-box-pack-start vbox entry #f #f 0)
+    (gtk-box-pack-start vbox b1 #f #f 0)
+    (gtk-box-pack-start vbox b2 #f #f 0)
+    (gtk-box-pack-start vbox b3 #f #f 0)
+    (gtk-box-pack-start vbox b4 #f #f 0)
+    (gtk-box-pack-start vbox b5 #f #f 0)
+    (gtk-entry-set-text entry "1.0")
+    (gtk-signal-connect entry "activate"
+			(lambda ()
+			  (set-zoom (string->number 
+				     (gtk-entry-get-text entry)))))
+    (gtk-signal-connect adj "value-changed"
+			(lambda ()
+			  (let ((val (get-zoom)))
+			    (cond
+			     ((and *sheet*
+				   (> (abs (- val (sheet-zoom *sheet*)))
+				      1.0e-10))
+			      (dirty!)))
+			    (gtk-entry-set-text entry (number->string val))
+			    (gto-canvas-set-zoom *canvas* val))))
+    (gtk-signal-connect b1 "clicked" (lambda () (inc-zoom 1.5)))
+    (gtk-signal-connect b2 "clicked" (lambda () (inc-zoom (/ 1.5))))
+    (gtk-signal-connect b3 "clicked" (lambda () (set-zoom 0.2)))
+    (gtk-signal-connect b4 "clicked" (lambda () (set-zoom 1.0)))
+    (gtk-signal-connect b5 "clicked" toggle-show-blobs)
+    vbox))
+
+(define (update-zoom)
+  (cond 
+   (*sheet*
+    (set-zoom (sheet-zoom *sheet*)))
+   (else
+    (set-zoom 1.0))))
+
+;;; Main
+
+(define *button-box* #f)
+
+(define (add-button label proc)
+  (let ((b (gtk-button-new-with-label label)))
+    (gtk-signal-connect b "clicked" proc)
+    (gtk-box-pack-start *button-box* b #f #t 0)
+    (gtk-widget-show b)))
+
+(define (fill-toplevel w)
+  (let* ((hbox (gtk-hbox-new #f 2))
+	 (vbox (gtk-vbox-new #f 0))
+	 (tabs-vbox (gtk-vbox-new #f 0))
+	 (scrollbox (gtk-scrolled-window-new))
+	 (canvas (make gto-canvas))
+	 (canvas-w (gto-canvas-widget canvas))
+	 (tabs (gtk-notebook-new))
+	 (sbar (gtk-statusbar-new)))
+
+    (define (add-tab label contents)
+      (gtk-notebook-append-page tabs contents
+				(gtk-label-new label)))
+
+    (set! *canvas* canvas)
+    (set! *button-box* tabs-vbox)
+
+    (add-tab "Files" (make-files-tab))
+    (add-tab "Add" (make-libs-tab))
+    (add-tab "Set" (make-set-tab))
+    (add-tab "Zoom" (make-zoom-tab))
+
+    (refresh-libraries)
+
+    (gtk-signal-connect tabs "switch_page"
+			(lambda args
+			  (commit-all)
+			  (msg-clear)))
+
+    (set! *statusbar* sbar)
+    (set! *statusbar-context* (gtk-statusbar-get-context-id sbar "mockup"))
+    (gtk-statusbar-push sbar *statusbar-context* "Welcome")
+
+    (gtk-container-add scrollbox canvas-w)
+    (gossip-canvas-set-scroll-region canvas-w -1000 -1000 1601 1401)
+    (gtk-widget-set-usize tabs 150 -1)
+    (gtk-box-pack-start tabs-vbox tabs #t #t 0)
+    (gtk-box-pack-start hbox tabs-vbox #f #f 0)
+    (gtk-box-pack-start hbox scrollbox #t #t 0)
+    (gtk-box-pack-start vbox hbox #t #t 0)
+    (gtk-box-pack-start vbox sbar #f #t 0)
+    (gtk-container-add w vbox)))
+
+(define (update-title)
+  (gtk-window-set-title *toplevel*
+			(string-append "Mockup - " (sheet-title *sheet*))))
+
+(define (load-user-rc name)
+  (let ((full-name (string-append (getenv "HOME") "/" name)))
+    (if (file-exists? full-name)
+	(load full-name))))
+
+(let ((w (gtk-window-new 'toplevel)))
+  (set! *toplevel* w)
+  (set! *props* '((verbose "" #f)))
+  (gtk-window-set-default-size w 600 400)
+  (fill-toplevel w)
+  (gtk-widget-show-all w)
+  (load-user-rc ".gossip/edrc")
+  (for-each load-from-file (cdr (command-line)))
+  (update-title)
+  (activate-props #f #f)
+  (gtk-signal-connect w "delete-event" (lambda (ev) (exit-mockup) #t))
+  (init-sub-processes)
+  (gtk-standalone-main w))

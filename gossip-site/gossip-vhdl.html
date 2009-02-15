@@ -1,0 +1,35 @@
+<!DOCTYPE html PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html>
+<head>
+<title>The GOSSIP Simulation Environment - gossip-vhdl</title>
+</head>
+<body bgcolor="#FFFFFF" text="#000000" link="#1F00FF" alink="#FF0000" vlink="#9900DD">
+<center>
+<img src=gossip-small-color.png>
+<h2><a href=index.html>The GOSSIP Simulation Environment</a></h2>
+<h1>gossip-vhdl</h1>
+</center>
+
+<blockquote>
+
+<p>
+There is not much to say about VHDL support in GOSSIP right now.  One
+possibility is to translate from a subset of VHDL to the native input
+language of <samp>gossip-sim</samp>.  The subset will be chosen to
+support the simulation model of <samp>gossip-sim</samp>, synchronous
+data flow.  Behavioural code will be translated into C++, using a
+modified version of the <a
+href=http://www.freehdl.seul.org>FreeHDL</a> code generator, and
+structural code will be translated into hierarchical blocks written in
+Scheme.
+
+<p>
+Another possibility would be to interface <samp>gossip-sim</samp> with
+the FreeHDL simulator.  This might be easier and provide more
+features.  However, you would not have a fast synchronous simulator
+for a synchronous subset of VHDL.
+
+</blockquote>
+
+</body>
+</html>

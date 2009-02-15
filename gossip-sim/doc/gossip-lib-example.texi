@@ -1,0 +1,131 @@
+\input texinfo.tex   @c -*- texinfo -*-
+@c %**start of header
+@setfilename gossip-lib-example.info
+@settitle gossip-lib-example
+@iftex
+@afourpaper
+@end iftex
+@c %**end of header
+
+@defcodeindex bl
+
+@dircategory Gossip
+@direntry
+* Gossip-lib-example: (gossip-lib-example).    The Example Library.
+@end direntry
+
+@setcontentsaftertitlepage
+
+@titlepage
+@title GOSSIP Manual -- @tt{gossip-lib-example}
+@author Marius Vollmer
+
+@page
+@vskip 0pt plus 1filll
+Copyright @copyright{} 2001 Marius Vollmer.
+
+Permission is granted to make and distribute verbatim copies of
+this manual provided the copyright notice and this permission notice
+are preserved on all copies.
+
+Permission is granted to copy and distribute modified versions of this
+manual under the conditions for verbatim copying, provided that the entire
+resulting derived work is distributed under the terms of a permission
+notice identical to this one.
+
+Permission is granted to copy and distribute translations of this manual
+into another language, under the above conditions for modified versions,
+except that this permission notice may be stated in a translation approved
+by the author.
+@end titlepage
+
+@ifnottex
+@node Top, Introduction
+@top The GOSSIP Example Library
+@end ifnottex
+
+@menu
+* Introduction::                
+* Input/Output::                
+* Arithmetic::                  
+* Block Index::                 
+@end menu
+
+@node Introduction
+@chapter Introduction
+
+This manual documents the example library distributed with
+@code{gossip-sim}.  The library itself is not very interesting, and this
+manual serves mostly as an example of how you might document your own
+libraries.
+
+
+@node Input/Output
+@chapter Input/Output
+
+The @code{example} library contains two sophisticated blocks for doing
+input and output.
+
+@section @code{source}
+@blindex source
+
+The @code{source} block produces a stream of constant complex values.
+It will never indicate that it has finished.
+
+@deftypevr Generic sim_complex value
+The value that is produced on port @code{out}.  The default of this
+generic is 1.0.
+@end deftypevr
+
+@deftypevr {Output Port} sim_complex out
+The sole output port.  It produces a constant stream of complex
+numbers whose value is determined by the @code{value} generic.
+@end deftypevr
+
+@section @code{destination}
+@blindex destination
+
+The @code{destination} block prints the complex values it receives on
+its input port to standard output.  The input port is a multiport and
+the output will contain one column for each signal connected to that
+port.  The block will indicate that it wants to finish after printing
+a given number of rows.
+
+@deftypevr Generic int count
+The number of rows to print until finishing.  The default is 5.  A
+value of -1 will cause the block never to finish.
+@end deftypevr
+
+@deftypevr {Input Multiport} sim_complex in
+The input multiport.  The output will contain one column for each
+connected signal.
+@end deftypevr
+
+
+@node Arithmetic
+@chapter Arithmetic
+
+There is also support for high-speed arithmetic.
+
+@section @code{adder}
+@blindex adder
+
+The @code{adder} block has a complex valued input multiport and a
+complex valued output port.  The sum of all signals connected to the
+input multiport will appear on the ouput.
+
+@deftypevr {Input Multiport} sim_complex in
+All signals connected to this port will be added.
+@end deftypevr
+
+@deftypevr {Output Port} sim_complex out
+The sum appears on this port.
+@end deftypevr
+
+
+@node Block Index
+@chapter Block Index
+
+@printindex bl
+
+@bye

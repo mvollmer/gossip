@@ -1,0 +1,1942 @@
+\input texinfo.tex   @c -*- texinfo -*-
+@c %**start of header
+@setfilename gossip-sim.info
+@settitle gossip-sim
+@iftex
+@afourpaper
+@end iftex
+@syncodeindex fn cp
+@syncodeindex vr cp
+@syncodeindex tp cp
+@c %**end of header
+
+@macro myimage {file}
+@iftex
+@bigskip
+@end iftex
+@center @image{\file\}
+@iftex
+@medskip
+@end iftex
+@end macro
+
+
+
+@dircategory Gossip
+@direntry
+* Gossip-sim: (gossip-sim).           The Gossip Simulator.
+@end direntry
+
+@setcontentsaftertitlepage
+
+@titlepage
+@title GOSSIP User Manual -- @tt{gossip-sim}
+@author Marius Vollmer
+
+@page
+@vskip 0pt plus 1filll
+Copyright @copyright{} 2000 Marius Vollmer.
+
+Permission is granted to make and distribute verbatim copies of
+this manual provided the copyright notice and this permission notice
+are preserved on all copies.
+
+Permission is granted to copy and distribute modified versions of this
+manual under the conditions for verbatim copying, provided that the entire
+resulting derived work is distributed under the terms of a permission
+notice identical to this one.
+
+Permission is granted to copy and distribute translations of this manual
+into another language, under the above conditions for modified versions,
+except that this permission notice may be stated in a translation approved
+by the author.
+@end titlepage
+
+@ifnottex
+@node Top
+@top The GOSSIP Simulator
+@end ifnottex
+
+@menu
+* Introduction::                
+* Examples::                    
+* The World according to Gossip::  
+* Invoking gossip-run::         
+* Constructing Simulations with Scheme::  
+* Writing Primitive Blocks in C++::  
+* Index::                       
+@end menu
+
+@node Introduction
+@chapter Introduction
+
+This text documents the @file{gossip-sim} package.  It is the core
+member of the GOSSIP suite of packages that together provide a
+simulation environment for synchronous, data driven models.  Gossip-sim
+itself is the simulation engine and there are several other packages
+that contain a graphical editor for simulation nets, for example, or
+libraries of useful simulation components.
+
+Simulations are described as @dfn{nets} of @dfn{components}.  The
+components are connected via @dfn{signals}.  A component has @dfn{ports}
+that can accept the signals.  While executing the simulation, a
+component receives data at its input ports and produces new data at its
+output ports (which in turn travels thru a signal to the input port of
+another component).  A component must specify how much data it expects
+at each of its input ports and how much it produces at each output port
+once enough data has arrived.  These sizes must remain constant during
+the whole simulation.  The simulation engine takes care of scheduling
+all components in the right order.
+
+There is no explicit concept of @emph{time} in the simulation model,
+i.e., no global clock is made available to the components and you can't
+specify delays in terms of seconds, for example.  Rather, the components
+can be viewed as connected by continuous streams of data and the data
+itself is what drives the computation.  You, as the programmer of a
+specific simulation net, might attach timing relationships to these
+streams, and might interpret them as discrete signals with different
+sampling frequencies, say, but the simulation engine doesn't really
+care.  All it cares about is that it can find a way to invoke the
+components such that all signals are in balance in the sense that
+exactly as much data is consumed at the end of a signal as is produced
+at its start.
+
+Components are created by @dfn{instantiating} @dfn{blocks}.  A specific
+block is a blueprint of all components that perform the same kind of
+function.  While instantiating a block you can specify values for the
+@dfn{generics} of the block.  The generics are parameters that influence
+the behaviour of the resulting components.  Each component has its own,
+independent set of values for the generics of its block.  Blocks can be
+organized into @dfn{libraries}, but they don't have to be.
+
+There are two general kinds of blocks, and correspondingly two general
+kinds of components: @dfn{primitive} ones and @dfn{hierarchical} ones.
+A primitive component is one that actually takes part in the final
+simulation.  It contains executable code that gets run whenever enough
+data has arrived at its input ports and there is room in its output
+buffer.  A hierarchical component on the other hand contains code to
+instantiate sub-components inside itself.  Ultimately, there will be a
+net of primitive components that can be executed in concert.  Thus,
+primitive components will do the real simulation work, while
+hierarchical components are a tool for organizing the net of primitive
+components.
+
+The data itself that is transported via the signals consists of just
+bits, as far as the simulation engine is concerned.  It is up to the
+primitive components to interpret these bits.  There is support for
+checking that connected components will interpret these bits in the same
+way, however.  There is also support for easily writing primitive blocks
+that work with complex numbers, or integers of up to 32 bits.
+
+Ports can be declared to be @dfn{multi ports}.  A multi port can accept
+any number of signals that are then treated individually by the
+component.  It is, for example, possible to implement a @samp{sum} block
+with a multi port as its sole input and a normal port as its output.
+When instantiated, the resulting component would then query how much
+signals are actually connected to the input and add them all up.
+
+The simulation system is targeted at simulations that contain relatively
+few components with relatively rich behaviour.  In a typical use, you
+might have a couple of hundreds components that do things like matrix
+multiplications or factorizations, implement radio transmission channel
+models, adaptively filter a digital signal, or something on that scale.
+There might also be lesser components that do multiplications or
+additions, but it wont probably be efficient to simulate gate-level
+designs that consist of hundred thousands of individual nand gates.
+
+Gossip-sim itself is implemented in two coarse layers.  The upper layer
+that is responsible for building the simulation net from user input,
+checking its validity and finding a suitable schedule for the primitive
+components, is written in Guile Scheme.  The lower layer that is
+responsible for actually carrying out the simulation is written in C++.
+
+The consequence of this is that hierarchical blocks are written in
+Scheme. The top-level user specification of the simulation net is
+written in Scheme, too, as it can be seen as a special purpose
+hierarchical block.  Primitive blocks are written in C++ and loaded into
+the simulation as shared libraries.
+
+When describing the layout of your simulation net, you are in effect
+writing a Scheme program and consequently you can use all features of
+Scheme.  This gives you a considerable flexible, much more than you
+would get from more special purpose languages like VHDL, for example.
+
+@node Examples
+@chapter Examples
+
+This chapter contains a number of runnable examples that should make you
+familiar with most of the concepts mentioned in the introduction.  It is
+assumed that you are already familiar with Scheme and C++.
+
+@menu
+* Example 1::                   
+* Example 2::                   
+* Example 3::                   
+* Example 4::                   
+* Example 5::                   
+@end menu
+
+@node Example 1
+@section Example 1
+
+Let us try to warm up with an example that shows a top-level simulation
+description that uses two primitive blocks.
+
+The simulation will contain a @samp{source} component that produces a
+stream of complex numbers and a @samp{destination} component that
+receives the stream and prints it to the console.  After printing 5
+numbers, the simulation will stop.  The simulation net can be
+illustrated like this:
+
+@myimage{example-1}
+
+Here is the actual simulation description, as you would type it into a
+file:
+
+@smallexample
+(use-library example *)
+
+(signals sig)
+
+(source :out sig)
+(destination :in sig)
+@end smallexample
+
+Assuming that the file is called @file{example-1.sim}, you can execute
+the contained simulation with this shell command
+
+@smallexample
+gossip-run example-1.sim
+@end smallexample
+
+@noindent
+You should then see something like this as the output:
+
+@smallexample
+(1,0) 
+(1,0) 
+(1,0) 
+(1,0) 
+(1,0) 
+destination.2: finished
+@end smallexample
+
+For this to work, there must be a library called @samp{example} that
+actually contains @samp{source} and @samp{destination} blocks.  When
+gossip-sim has been installed correctly at your site, you should have
+this library.
+
+You can also use @samp{gossip-run} as a shell.  When you invoke it
+without any arguments you are put into an interactive dialog where you
+can start simulations and do various other things.  The advantage of
+this mode of operation is that you do not have to sit thru the startup
+time of @samp{gossip-run} for every simulation and you can carry state
+from one simulation run to the next.
+
+When starting @samp{gossip-run} as a shell,
+
+@smallexample
+gossip-run
+gossip>
+@end smallexample
+
+@noindent
+you can start simulations with the @samp{run} command:
+
+@smallexample
+gossip> (run "example-1.sim")
+(1,0) 
+(1,0) 
+(1,0) 
+(1,0) 
+(1,0) 
+destination.2: finished
+@end smallexample
+
+Let us now turn to the detailed meaning of the example simulation
+description.
+
+@smallexample
+(use-library example *)
+@end smallexample
+
+@noindent
+This line makes the blocks in the @samp{example} library available.  The
+blocks can be accessed simply by using their names as variable names, as
+we will see below.@footnote{This works by using the module system of
+Guile, in case you are interested.}  The star @samp{*} just means that
+we want to see all available blocks of the @samp{example} library.  You
+could also restrict this set by listing each individual block, or you
+could rename blocks while importing them.  Full details on the
+@samp{use-library} statement can be found later on in the reference part
+of this document.  For this example, the effect of @samp{(use-library
+example *)} is that we can make references to variables named
+@samp{source} and @samp{destination} and find the corresponding blocks
+in them.
+
+@smallexample
+(signals sig)
+@end smallexample
+
+@noindent
+This statement defines a new signal, named @samp{sig}, that we will use
+to connect the two components.  The @code{signals} statement behaves
+like a regular Scheme definition using @code{define}.  Thus, you can use
+it only in places where a @code{define} would be valid.
+
+@smallexample
+(source :out sig)
+@end smallexample
+
+@noindent
+This is a component instantiation.  It looks like a regular function
+call, and, as far as Scheme is concerned, it actually is one.  The
+effect is that a new component is created from the @samp{source} block
+and inserted into the @dfn{current net}.  When @samp{gossip-run} starts
+to execute a simulation description, it creates an empty net.  The
+executed component instantiation statements (such as the one we are
+discussing right now) modify this net by inserting new components into
+it.  When the description file has been executed completely, the net is
+postprocessed into a runnable simulation and then started.
+
+The arguments to the function call are interpreted as
+@dfn{keyword/value} pairs.  In the example above, @samp{:out} is a
+keyword (because it starts with a colon), and @samp{sig} is its
+associated value.  Together, they specify that the @samp{out} port of
+the new @samp{source} component should be connected to the @samp{sig}
+signal.
+
+Let me say again that the expression above is really a function call,
+and thus, @samp{source} is really a function.  You can do anything with
+it that you could do with any other function, like invoking it with
+@samp{apply}, passing it around and storing it in data structures.
+
+@smallexample
+(destination :in sig)
+@end smallexample
+
+@noindent
+This is the second component instantiation.  It completes the net by
+connecting the @samp{in} port of the @samp{destination} component to the
+@samp{sig} signal.
+
+You might be wondering how Gossip knows when to stop the simulation.
+The default behaviour is to stop as soon as one component has
+@dfn{finished}.  Each component has a flag that says whether it has
+already finished or not.  The @samp{destination} component raises this
+flag when it has printed 5 numbers.  The @samp{source} component never
+raises its flag.  Thus, our sample simulation stops as soon as the
+@samp{destination} component raises its finished flag.
+
+You can control the condition for stopping in a very general way,
+@ref{Blocks and Components}.
+
+@node Example 2
+@section Example 2
+
+The next example introduces hierachical components and multi-ports.  It
+also shows how to give values to the generics of components.  It extends
+the basic structure of the first example by connecting two sources to the
+destination.  The two sources are instantiated by a hierarchical block
+called @samp{two-source}.  It is not imported from a library.  Instead,
+it is defined along with the simulation description itself.
+
+@myimage{example-2}
+
+Note how the @samp{two-source} component contains two @samp{source}
+components.  Each @samp{source} component has an output port named
+@samp{out}, with a signal connected to it.  From the outside
+of the @samp{two-source} block, these two signals are accessible on two
+output ports named @samp{out1} and @samp{out2}, respectively.  Now, both
+signals are connected to the only input port of the @samp{destination}
+component.  This port is a multi-port and thus it can accept more than
+one signal.  This fact is expressed by this funny sloped line in the
+picture above.
+
+Here is the simulation file @file{example-2.sim}:
+
+@smallexample
+(use-library example *)
+
+(define-block (two-source (> out1) (> out2))
+  (source :out out1 :value 1)
+  (source :out out2 :value 2))
+
+(signals a b)
+
+(two-source :out1 a :out2 b)
+(destination :in (list a b))
+@end smallexample
+
+It uses two new features, which will be explained in turn.
+
+@smallexample
+(define-block (two-source (> out1) (> out2))
+  (source :out out1 :value 1)
+  (source :out out2 :value 2))
+@end smallexample
+
+@noindent
+This statement defines a new block called @samp{two-source}.  This is an
+alternative to importing blocks via libraries.  The sub-form
+@samp{(two-source (> out1) (> out2))} specifies the name and the
+interface of the block.  In our specific case, the interface consists of
+two @dfn{formals}, @samp{(> out1)} and @samp{(> out2)}.  They specify
+two output ports (indicated by the @samp{>} symbol) named @samp{out1}
+and @samp{out2}, respectively.
+
+The remaining part of the @samp{define-block} statement is its
+@dfn{body}.  It consists of Scheme expressions that are executed when
+the block is instantiated.  In our example, we have two expressions that
+each instantiate a @samp{source} component.  Within the body, the
+formals of the block are available as correspondingly named variables.
+For ports, they have the signal as their value that is connected to the
+port.
+
+Thus, the first component instantiation expression in the body of the
+@samp{define-block} statement creates a @samp{source} component with its
+@samp{out} port connected to the signal that is connected to the
+@samp{out1} port of the enclosing @samp{two-source} block.
+
+You can also see how to specify values for generics.  It is done with a
+keyword/value pair, analogous to how signals are connected to ports.
+The first @samp{source} component gets 1.0 as the value for its
+@samp{value} generic, the second gets 2.0.  What generics exist and what
+they mean is of course determined by the block.  The @samp{value}
+generic in this example simply determines the value that the
+@samp{source} component produces at its output port.
+
+The @code{define-block} statement behaves like @code{define} as well.
+You can use it wherever @code{define} would be valid.
+
+@smallexample
+(destination :in (list a b))
+@end smallexample
+
+@noindent
+This component instantiation connects two signals to the @samp{in} port
+of @samp{destination}.  It does this by constructing a list of the two
+signals and uses the list as the value in the keyword/value pair.
+However, we could also have done it by connecting to the @samp{in} port
+twice, like this:
+
+@smallexample
+(destination :in a :in b)
+@end smallexample
+
+Note that you can only connect multiple signals to ports that are
+prepared for that.  The @samp{destination} has been specifically written
+to accept multiple signals at its @samp{in} port.  Not every port can be
+used in this way.
+
+When you run this simulation, you get output like this
+
+@smallexample
+(1,0) (2,0) 
+(1,0) (2,0) 
+(1,0) (2,0) 
+(1,0) (2,0) 
+(1,0) (2,0) 
+destination.4: finished
+@end smallexample
+
+You can see what @samp{destination} does with multiple signals on the
+@samp{in} port: it outputs one column for each of them.
+
+@node Example 3
+@section Example 3
+
+This little example shows how to run more than one simulation from one
+simulation file.
+
+As we have seen, the @samp{source} block has one generic named
+@samp{value} that determines what value the source produces.  We are now
+going to start several simulations with different values for this
+generic.
+
+@smallexample
+(use-library example *)
+
+(define (simulation value)
+  (signals sig)
+  (source :out sig :value value)
+  (destination :in sig))
+
+(do ((val 0 (1+ val)))
+    ((= val 5))
+  (sim-run simulation val))
+@end smallexample
+
+As you can see, the instantiation statements have been combined into a
+function named @samp{simulation}.  When this function is called, our two
+well-known components are added to the current net, just as it was the
+case in the previous examples.  However, the function takes a parameter
+@var{value} that is used to set the @samp{value} generic of the
+@samp{source} component.  Thus, we can easily instantiate components
+with different values for this @samp{value} generic.
+
+The function @samp{simulation} is then used together with the
+@samp{sim-run} function (provided by Gossip) to create and execute a
+net.  When @samp{sim-run} is called like
+
+@smallexample
+(sim-run @var{function} @var{args})
+@end smallexample
+
+@noindent
+it creates a new, empty net and makes it current.  Then, while the net
+is still current, it calls @var{function}, passing it @var{args}.  The
+function @var{function} is supposed to add new components to the net,
+and when it returns, the net is executed in the usual way.
+
+In the example above, we call @samp{sim-run} in a loop, thus causing it
+to execute several simulations.
+
+Remember that blocks can be used like functions?  This leads to an
+interesting variation of this example.  Because blocks behave like
+functions, we can pass a block to @samp{sim-run} and use the @var{args}
+to carry the keyword/value parameters.  It would look like the
+following:
+
+@smallexample
+(use-library example *)
+
+(define-block (simulation (= value))
+  (signals sig)
+  (source :out sig :value value)
+  (destination :in sig))
+
+(do ((val 0 (1+ val)))
+    ((= val 5))
+  (sim-run simulation :value val))
+@end smallexample
+
+
+@node Example 4
+@section Example 4
+
+We now get to a slightly more complicated simulation that does something
+vaguely useful, for a change.  We will compute the first few Fibonacci
+numbers.  How many numbers are computed can be determined via an
+@dfn{argument} to the simulation script.  The working of this example
+might be hard to visualize from the code alone, so here is a picture of
+it:
+
+@c @myimage{example-4}
+
+As you can see, the central piece is an @samp{adder} block with two
+feedback connections.  An @samp{adder} computes the sum of the values on
+its input signals and writes this sum to its output port.  One of its
+inputs is connected to an @samp{impulse-source}, which writes one
+non-zero value on its output port, and then only zeros.  It is realized
+by a hierarchical block defined in the simulation script.  Here now is
+the whole script.
+
+@smallexample
+(use-library example *)
+
+(define-block (impulse-source (= value 1.0) (> out))
+  (signals a b)
+  (source :out a :value value)
+  (source :out b :value (- value))
+  (adder :in a 
+	 :in (sig b :delay 1) 
+	 :out out))
+
+(signals a b)
+(impulse-source :out a)
+(adder :in a 
+       :in (sig b :delay 1) 
+       :in (sig b :delay 2) 
+       :out b)
+(destination :in b :count (arg 0 20))
+@end smallexample
+
+The @samp{impulse-source} block consists of two @samp{source} blocks
+that each produce a constant value.  The second @samp{source} produces
+the negated value of the first one, and a delayed version of the second
+stream is added to the first.  This produces the desired impulse.
+Incidentally, you can think of this strange arrangement as taking the
+derivative of a step function.
+
+The @samp{impulse-source} block already has to delay a signal.  It does
+this by using the @samp{sig} function to generate a different view of a
+signal:
+
+@smallexample
+(sig b :delay 1)
+@end smallexample
+
+@noindent
+The effect of this function call is to produce a new signal that is a
+delayed (or otherwise modified) version of an existing signal.
+
+@c Still true?
+@c @footnote{
+@c Gossip-sim still has some problems with delays.  They must be a multiple
+@c of the input chunk size of the destination port that the delayed signal
+@c is connected to.}
+
+This example shows also how to specify a default value for a generic
+when defining a hierarchical block.  The generic @samp{value} of
+@samp{impulse-source} gets a default value of @code{1.0} when no
+keyword/value pair has been specified for it during the instantiation.
+
+@smallexample
+(define-block (impulse-source (= value 1.0) ...
+@end smallexample
+
+How many numbers will be computed is determined by the @samp{count}
+generic of the destination block.  It will stop the simulation when it
+has received and printed @samp{count} numbers.  The value for
+@samp{count} in turn is determined by calling @samp{arg}:
+
+@smallexample
+(arg 0 20)
+@end smallexample
+
+@noindent
+This will return the value of the first argument to the simulation
+script (the first argument has index 0).  When no argument is given, the
+value 20 is used as a default.
+
+To print the first 25 Fibonacci numbers, you can either invoke
+@samp{gossip-run} like
+
+@smallexample
+gossip-run example-4.sim 25
+@end smallexample
+
+@noindent
+or use the @samp{run} command interactively like
+
+@smallexample
+gossip> (run "example-4.sim" 25)
+@end smallexample
+
+When arguments come from the command line, they are first passed thru
+the Scheme function @samp{read}.  This means that you need to use the
+regular Scheme read syntax.  For example, @samp{123} is a number, while
+@samp{"foo"} is a string and @samp{(a b c)} is a list of three symbols.
+
+@node Example 5
+@section Example 5
+
+After looking at the Scheme side of things, this example will finally
+show how to actually implement the @samp{source} block in C++.
+
+As we have seen already, the @samp{source} block has one output port
+that produces complex numbers.  The data size of this port is always 1,
+that is, the numbers are produced individually.@footnote{You can use
+data sizes greater than 1, which is for example useful for blocks that
+do matrix operations.}
+
+The @samp{source} block also has one generic.  This generic determines
+the constant value that is produced at the output.  The default value
+for this generic is 1.
+
+Without further ado, here is the C++ code for @samp{source}:
+
+@smallexample
+#include <gossip/sim.h>
+
+sim_generic generics[] = @{
+  SIM_GENERIC ("value"),
+  NULL
+@};
+
+sim_port outputs[] = @{
+  SIM_COMPLEX_PORT ("out", 1),
+  NULL
+@};
+
+struct source : sim_complex_comp @{
+
+  sim_complex value;
+
+  void
+  init ()
+  @{
+    get (value, "value", 1.0);
+  @}
+
+  void
+  step (const sim_complex **in, sim_complex **out)
+  @{
+    out[0][0] = value;
+  @}
+
+@};
+
+SIM_DECLARE_BLOCK (source, generics, NULL, NULL, outputs);
+@end smallexample
+
+To bring this into a form that Gossip can use, you have to build a
+shared library that includes the code above.  Right now, you need a
+separate shared library for each individual block.  How to exactly
+produce such a shared library is very platform dependent, unfortunately.
+On GNU/Linux, the following works, assuming the code above is contained
+in @samp{source.cc}:
+
+@smallexample
+g++ -shared -fPIC -o source.prim source.cc
+@end smallexample
+
+@noindent
+Using @file{g++} is important so that the right C++ libraries are
+included.  There will be support for doing this portably in the future.
+For now, you might want to look what the module @code{(gossip
+sim-config)} might offer you.
+
+After you have managed to build a working shared library, you must make
+it visible to Gossip so that you can use it in simulations.  The direct
+way is to load the block by hand with a suitable @samp{define-block}
+statement like
+
+@smallexample
+(define-block source :primitive "some/where/source.prim")
+@end smallexample
+
+@noindent
+Another, more elegant way is to copy the shared library file into a
+directory where it can be automatically found by the @samp{use-library}
+mechanism, @ref{Libraries}.  You can also make use of the special library
+called @samp{work} that corresponds to all blocks in the directory that
+is current when the @code{use-library} statement is evaluated.
+
+Now to the source of @samp{source} itself.
+
+@smallexample
+#include <gossip/sim.h>
+@end smallexample
+
+@noindent
+The header file @file{gossip/sim.h} must be included at the top of every
+primitive Gossip block.
+
+@smallexample
+sim_generic generics[] = @{
+  SIM_GENERIC ("value"),
+  NULL
+@};
+@end smallexample
+
+@noindent
+This array of @code{sim_generic} structures describes the generics of
+the @samp{source} block.  The initialization of each member should be
+done with the macro @code{SIM_GENERIC}.  The single argument of that
+macro should be a string with the name of the generic.
+
+The end of the array is marked with a @code{NULL}.  The array itself is
+brought into action by the @code{SIM_DECLARE_BLOCK} macro at the end of
+the code.
+
+@smallexample
+sim_port outputs[] = @{
+  SIM_COMPLEX_PORT ("out", 1),
+  NULL
+@};
+@end smallexample
+
+@noindent
+This array of @code{sim_port} structures describes the output port of
+the @samp{source} block.  It follows the same general principles as the
+@code{sim_generic} array above, i.e., you should initialize it by using
+macros and its end is marked with a @code{NULL}.
+
+The @code{SIM_COMPLEX_PORT} macro as used above means: the type of the
+port is @code{complex}, its name is @code{"out"} and its default chunk
+size is 1.
+
+@smallexample
+struct source : sim_complex_comp @{
+@end smallexample
+
+@noindent
+Each block is represented by a new class that inherits from one of
+several base classes that are provided by @file{gossip/sim.h}.  Which
+base class to choose depends on the types of the input and output ports.
+For @samp{source}, the right class is @code{sim_complex_comp}, because
+it exchanges complex values on its ports.
+
+@smallexample
+  sim_complex value;
+
+  void
+  init ()
+  @{
+    get (value, "value", 1.0);
+  @}
+@end smallexample
+
+@noindent
+The @code{sim_complex_comp} class provides a virtual function
+@code{init} that you should override to initialize new objects of your
+class.  The @samp{source} block just uses the @code{get} function to
+copy the value of the generic named @samp{"generic"} into the member
+field @code{value}.  The type @code{sim_complex} is a portable way to
+refer to what is now @code{complex<double>}.  There used to be a time
+when this was necessary, but now @code{sim_complex} is used mostly out
+of habit.
+
+The @code{get} member function has several overloaded variants.  The
+type of the first argument determines what variant is selected by the
+compiler.  In this case, the variant for complex values is selected and
+it will try to convert from Scheme values to a @code{sim_complex} value.
+When that can't be done (for example, a string can't be converted into a
+complex value), an error is signalled.
+
+The default value for the @code{value} generic is given as the third
+argument to @code{get}.  When you omit the third argument, a variant of
+@code{get} is selected that will signal an error when no explicit value
+is given.
+
+@smallexample
+  void
+  step (const sim_complex **in, sim_complex **out)
+  @{
+    out[0][0] = value;
+  @}
+@end smallexample
+
+@noindent
+This is another virtual function provided by @code{sim_complex_comp}
+that you should override.  The @code{step} function is called whenever
+enough data has arrived at the input ports and the output ports can
+accept new data.  The parameters @code{in} and @code{out} point to the
+input and output buffers, respectively.  The length of these buffers is
+determined by the chunk sizes associated with the corresponding ports.
+The @samp{source} block has no inputs, so we can't use the @code{in}
+parameter.  The buffer for the only, zeroth output port can be accessed
+as @code{out[0]}.  It has room for exactly one complex number, because
+the chunk size of its port has been set to 1. Thus, we just store
+@code{value} in @code{out[0][0]}.
+
+You absolutely have to get this right; there is no protection against
+using ports that are not there, or against writing past the end of a
+chunk.
+
+@smallexample
+SIM_DECLARE_BLOCK (source, generics, NULL, NULL, outputs);
+@end smallexample
+
+The @code{SIM_DECLARE_BLOCK} macro actually makes the new @code{source}
+class available to Gossip.  It takes the name of the new class, and
+pointers to the generic array, the results array, the input port array,
+and the output port array.
+
+@node The World according to Gossip
+@chapter The World according to Gossip
+
+This chapter describes the simulation model of Gossip, its various
+building blocks, their relationships, and the technical terms used to
+talk about it all.
+
+Gossip can simulate @emph{syncronous data flow programs}.  This means
+that it can deal with programs that can be divided into pieces that run
+concurrently and these pieces communicate only by exchanging streams of
+data at a constant rate and with a fixed pattern of connections.
+
+In Gossip, the independent pieces of a program are termed
+@dfn{processes}.  The entities that carry the data streams are called
+@dfn{signals}.  These signals connect to @dfn{input ports} and
+@dfn{output ports} of processes.  Whenever enough data is avilable at
+the input ports of a process, it performs its assigned computation and
+produces data at its output ports.  These new data elements appear on
+the input ports of other processes (via the connected signals) and may
+enable these other processes to run in turn.
+
+Exactly how much data must appear on the input ports of a process is
+determined by the @dfn{chunk} size of the individual input ports.  The
+chunk size of a input port specifies the number of data elements that
+the process expects at that port.  When a process has more than one
+input port, there must be enough data on all its input ports before it
+will run.
+
+Likewise, the chunk size of an output port specifies how data will appear
+on this port when the process is run once.  As an example, consider a
+process with only one input port and only one output port. When the
+input port has a chunk size of 1 and the output port has a chunk size of
+2, then the process will produce two elements at its output port for
+every single element at its input port.  You can also view the chunk
+sizes as indicators of the (relative) data rate at a port.  The example
+process would have a output data rate twice that of its input data
+rate.
+
+The signal connections must be made before the simulation is started and
+they cannot be changed during the run of a simulation.  All signals
+must be connected to exactly one output port and at least one input
+port.  When a signal is connected to more than one input port, all input
+ports see the same, effectively duplicated data stream.
+
+Furthermore, the chunk sizes of all ports must be fixed at run-time.
+and the chunk sizes and connections must be chosen so that all data
+rates are consistent.  In effect, the simulation must be able to run
+forever and not produce more data elements at output ports than are
+consumed at input ports.  This does not mean that the chunk size of an
+output port must be equal to the chunk sizes of the input ports it is
+connected to, however.
+
+You can specify a @dfn{delay} individually for each input port that a
+given signal is connected to.  The effect of a delay is that the first
+data element that comes out of the output port of the signal is not the
+first to reach the input port.  Instead, it is preceeded by a number of
+data elements that have been placed on the signal before the simulation
+is started.
+
+You can form loops with your signal connections.  However, there must be
+sufficient delay in the loop to allow the simulation to start.  How much
+is sufficient depends on the chunk sizes of the processes on the loop.
+Gossip will tell you how much is needed when you specify too little.  Of
+course, you can also have delay in signals that don't form loops.
+
+Processes are created as a side effect of @dfn{instantiating}
+@dfn{blocks}.  When you instantiate a block, a @dfn{component} is
+created.  A component can contain subordinate components (in a
+hierachical fashion) and processes.  A component that contains other
+components is also called a @dfn{hierarchical} componenent, while a
+component that only contains processes is called a primitive component.
+
+Like processes, components have input and output
+ports.@footnote{Actually, only components have ports.  Processes just
+use the ports of their immediatly enclosing component.}  Exactly what
+ports are created is determined by the @dfn{interface} of the block that
+is being instantiated.  This interface specifies the @dfn{name} of each
+port, its @dfn{type}, and whether it is a @dfn{multiport}.  The name is
+used to identify the port during instantiation and the type is used to
+make sure that only compatible ports are connected via signals.  When
+instantiating a block, you must specify exactly one signal for each
+port, unless the port is a multiport.  A multiport can accept any number
+of signals, including zero.  For each signal that is connected to a
+multiport, an individual, normal port is created and the signal is
+connected to it.
+
+In addition to ports, the interface of a block can also contain
+@dfn{generics}.  A generic is a parameter that influences the resulting
+component of instantiating the block.  For example, it can influence the
+computations that are performed by the processes, or it can control how
+the sub-components of a hierarchical component are created.  What
+exactly a generic does is part of the definition of the block.  The
+interface of a generic can specify a default value that is used when no
+value is specified during instantiation.
+
+Each component has an @dfn{exit predicate} that is used to determine when
+a simulation should be stopped.  The exit predicate is specified during
+the instantiation of a block.  A simulation is always constructed in
+such a way that there is a single top-level component.  The simulation
+stops when the exit predicate of this top-level component becomes
+true.  Typically, an exit predicate of a component makes use of the exit
+predicates of its sub-components or some other means to check whether
+one of its processes has finished.  The evaluation of the exit predicate
+has to be triggered explicitly by a process.
+
+Each component can have an @dfn{epilog}.  The epilog is a piece of code
+that is executed when the simulation has finished.  Typically, it
+computes @dfn{results} for the component.  A result is a named value
+that can be retrieved from a component once the simulation has finished.
+
+@section Notes
+
+It is probably interesting to relax the requirement that chunk sizes
+must be constant at run-time.  This will force us to support dynamic
+scheduling, which is probably harder to do efficiently.
+
+As of now, you can only have non-negative amounts of delay.  Maybe
+Gossip will be extended to allow negative delays.  Such negative delays
+will make a number of data elements disappear at the start of a data
+stream before they reach their destination.
+
+Right now, a component can either be a strictly hierarchical component
+without any processes, or be a primitive component with exactly one
+process.  A primitive component is completely specified in C++,
+including generics, results, the process, and the epilog.
+
+There are some plans for `meta simulations'.  In such a simulation, the
+generics of a block and the results of its components are turned into
+input and output ports respectively.  The process of the meta-component
+would consist of a complete sub-simulation.
+
+@node Invoking gossip-run
+@chapter Invoking gossip-run
+
+The program @samp{gossip-run} that you have been using in the examples
+is only one of several ways to start a Gossip simulation.  This chapter
+explains these different ways in detail.
+
+The simulator is actually an extension to @dfn{Guile}, it is not a
+separate program.  Guile in turn is an implementation of an extended
+version of the programming language Scheme.  That is, after
+@samp{gossip-sim} has been added to the Guile environment, the language
+that you can use in that environment has been extended with Gossip
+specific features and you can use these features to run simulations.
+
+@menu
+* From the command like::       
+* From within Guile::           
+@end menu
+
+@node From the command like
+@section From the command like
+
+When you run the program @samp{gossip-run}, it does not much more than
+to start the Guile environment, load the Gossip extensions into it, and
+use the function @code{command-line-run} (see below) to evaluate the
+arguments passed on the command line.
+
+You can use @samp{gossip-run} in two modes: when you specify a script on
+the command line, it will run this script and then exit.  When you don't
+specify a script, it will launch into a regular Scheme read-eval-print
+loop, where the Gossip extensions have been made available already.
+
+The general form of the first mode is
+
+@smallexample
+gossip-run @var{script} @var{script-args}...
+@end smallexample
+
+@noindent
+The first argument, @var{script}, is the name of a file that contains
+Scheme code to be executed.  This code is executed in a fresh module
+where the Gossip functions and variables that are described in the next
+chapter are visible in addition to the usual Scheme features.  While the
+code is executed, blocks are instantiated into the current net.  After
+the script has finished, that net is simulated.  The @var{script-args}
+are available to @var{script} via the @samp{args} and @samp{arg}
+functions, as explained below.  The shell passes the @var{script-args}
+as strings to Gossip, but for @samp{args} and @samp{arg}, these strings
+are filtered thru the Scheme function @samp{read}.  XXX - give some
+examples.
+
+The program @samp{gossip-run} does not do anything special or
+complicated, because it is not meant to be used really that much.
+Whenever you find yourself wanting to write shell script to invoke
+@samp{gossip-run} repeatly with complicated arguments, you should
+probably just write a Scheme program that does all the complicated
+things and that uses the Gossip features directly.
+
+Likewise, you should probably use @samp{gossip-run} mostly in
+interactive mode and use the function @samp{run} to load and execute
+your simulation scripts.
+
+@node From within Guile
+@section From within Guile
+
+When you are already `in Guile', that is, when you are writing a Scheme
+program or typing into a regular Scheme read-eval-print loop, you can
+load Gossip-sim by loading the module @samp{(gossip sim)} with
+@samp{use-modules}, or any other mechanism you use for loading modules.
+After that, for example, you can use the Gossip function @samp{run} to
+load and execute simulations.
+
+@defun run script args...
+Load and execute the program in the file named by @var{script}, passing
+it @var{args}.  @var{script} should be a string, while @var{args} can be
+any Scheme values.  From within script @var{script} they can be
+retrieved unchanged via the functions @samp{arg} and @samp{args}.  The
+function @samp{run} uses @samp{with-args} to arrange for this.
+
+The code in @var{script} is loaded into a fresh, unnamed module where
+the module @samp{(gossip sim)} is visible in addition to the normal
+Scheme definitions.  Thus, all top-level definitions done by
+@var{script} are local to @var{script}.  If you don't want this, you
+should be using more primitive means than @samp{run} to load your Scheme
+code, for example plain @samp{load}, maybe in combination with
+@samp{with-args} to set the arguments.
+
+While @var{script} is executed, a fresh and empty net is made current.
+Thus, all block instantiations performed by @var{script} are collected
+into this net.  When @var{script} has been executed completely, the net
+is executed as a simulation.  In effect, @var{script} is loaded in an
+environment as setup by the function @samp{sim-run}.
+
+Of course, @var{script} can ignore the current net provided by
+@samp{run} and use @samp{sim-run} directly to have more control.
+
+@end defun
+
+@defun arg index [default]
+Return the script argument indicated by @var{index}, which should be a
+non-negative integer.  The first argument has index 0.  When there are
+not enough arguments to satisfy the request, @samp{arg} returns
+@var{default}.  When @var{default} has not been specified, an error is
+signalled instead.
+@end defun
+
+@defun args
+Return a list of all script arguments as specified by the most recent
+call to @samp{with-args} or @samp{call-with-args}.  You should not
+modify this list.
+@end defun
+
+@defmac with-args args body...
+Install @var{args} as the current list of script arguments and execute
+@var{body}.  After @var{body} has finished, reinstall the previously
+active list of script arguments.  @var{args} should evaluate to a list.
+The whole @samp{with-args} form evaluates to the value that @var{body}
+evaluates to.
+@end defmac
+
+@defun call-with-args args proc
+Call @var{proc}, a procedure of no arguments, while @var{args} have been
+installed as the current list of script arguments.  After @var{proc} has
+finished, reinstall the previously active list of script arguments and
+return the value returned by @samp{proc}.  @var{args} should be a list.
+@end defun
+
+@defun sim-repl
+Launch into an interactive read-eval-print loop.  The module
+@samp{guile-user} is made the current module, the @samp{(gossip sim)}
+module is made visible inside it and the file @file{~/.gossip/simrc} is
+loaded if it exists.
+@end defun
+
+@defun command-line-run progname [script args...]
+When @var{script} and @var{args} are not specified, call
+@samp{sim-repl}.  Else, filter each @var{arg} thru @samp{read} and call
+@samp{run} with the result.  @var{progname} is ignored.  This function
+is mainly intended to be sued by the program @samp{gossip-run}, as
+explained above.
+@end defun
+
+@node Constructing Simulations with Scheme
+@chapter Constructing Simulations with Scheme
+
+As you have seen in the examples, simulations are constructed by running
+a Scheme program.  The program can use several features that are
+provided by Gossip.  This chapter describes these features in detail.
+
+@menu
+* Libraries::                   
+* Signals::                     
+* Blocks and Components::       
+* Simulation control::          
+@end menu
+
+@node Libraries
+@section Libraries
+
+Blocks can be put into libraries and these libraries can be conveniently
+accessed with the @samp{use-library} macro.  In effect, libraries are an
+alternative to the normal module mechanism of Guile.  Libraries are
+better adapted to the typical use of blocks and especially to the fact
+that some blocks are implemented in C++, but being in a library is not
+essential for a block.  Thus, if you don't want to use the library
+mechanism for your blocks, you don't need to.  Nevertheless, it is
+recommended that you do.
+
+A library is simply a collection of files in the filesystem.  Each file
+represents one block.  The file contains either Scheme code that will
+define the block when executed (probably by using @samp{define-block},
+below), or it will be a shared object that can be dynamically linked
+into the running Gossip process.  These different kinds of files are
+distinguished by the extensions of their names.  Files with an extension
+of @file{.block} are executed as Scheme code, and files with an
+extension of @file{.prim} are dynamically linked as object code.  More
+extension might be defined in the future.  The name of a block is
+determined by stripping the extension from its filename.
+
+The files representing the blocks are found by looking into a sequence
+of directories.  Blocks of a certain name will shadow blocks of the same
+name that are found in directories later on.
+
+The sequence of directories that make up a library is determined by
+looking into all directories specified by the @dfn{library path} for
+directories with a name that matches the name of the library.  Because
+blocks are either implemented in an architecture independent (Scheme) or
+architecture dependent way (shared objects), it is customary to have
+both architecture dependent and architecture independent directories on the library
+path.
+
+An exception is the library with the name @samp{work}.  Instead of
+searching the library path for suitable directories, it always uses the
+current working directory.
+
+@deffn {Settable Function} sim-library-path
+Return the currently active library path as a list of strings.  Each
+string in the list names a directory that is consulted in the way
+eplained above.
+
+You can use @samp{set!} to specify a new library path like so
+@smallexample
+(set! (sim-library-path) (cons "mydir" (sim-library-path)))
+@end smallexample
+@end deffn
+
+@defmac use-library library import-spec...
+Make the blocks in @var{library} available in the current module
+according to @var{import-spec}.
+
+The first argument @var{library} must be a symbol and names the library
+that is to be used.  The library path as determined by
+@samp{sim-library-path} is searched for directories matching
+@var{library}.  The blocks that are found in these directories are
+imported as top-level bindings into the current module, as requested by
+the @samp{import-spec}s.
+
+An @var{import-spec} can be:
+
+@table @samp
+@item *
+All bindings of the library without renaming.
+@item @var{sym}
+Only the block named @var{sym}, without renaming.
+@item (@var{local-name} @var{sym}) 
+Only the block named @var{sym} but renamed to @var{local-name}.
+@item (@var{prefix} @var{sym} @var{sym...})
+All blocks with the indicated @var{sym}s, prefixed with @var{prefix}.
+Note that this case is only distinguished from the previous one by
+having more than one @var{sym}.
+@item (@var{prefix} *)
+All blocks, prefixed with @var{prefix}.
+@end table
+
+The library is checked for new and changed blocks every time a
+@samp{use-library} statement is executed.  The @samp{use-library} that
+triggered this checking will see the changes, but no previously executed
+@samp{use-library} will be affected.  That is, once you have done an
+@samp{use-library} in a certain module, you don't get to see new blocks
+in that module as they appear on disk, or new versions as they are
+updated.  You need to issue the @samp{use-library} in the module again.
+This is considered a feature so that you have some control over when old
+blocks get replaced with new ones (and also to cut down on the amount of
+expensive checking that needs to be done).  You can have multiple
+versions of a block loaded into one Gossip session at the same time
+without confusing it.
+@end defmac
+
+@node Signals
+@section Signals
+
+@dfn{Signals} are objects that can be used to connect two or more ports.
+You can construct signals with the @samp{make-signal} function or, more
+conveniently, with the @samp{signals} macro.  You can also construct
+different @dfn{views} of a signal, for example a delayed version of it.
+These views are produced by the function @samp{sig} and can also be
+connected to ports.
+
+@defmac signals signal-spec...
+Construct signals according to the @var{signal-spec}s and assign them to
+new Scheme variables.
+
+The general form of a @var{signal-spec} is
+
+@smallexample
+(name option...)
+@end smallexample
+@noindent
+It is equivalent to
+
+@smallexample
+(define name (make-signal 'name option...))
+@end smallexample
+
+The abbreviated form @samp{name} of a @var{signal-spec} is equivalent to
+@samp{(name)}, that is, a name without any options.
+
+@end defmac
+
+@defun make-signal name :bus width
+Construct a new signal or a list of signals with name @var{name} and
+return it.  When @var{name} is omitted, the signal has no name.  When
+@var{width} is specified, it must be a non-negative integer, and a list
+of @var{width} single signals is constructed.  When @var{width} is
+omitted, a lone signal will be returned.
+@end defun
+
+@defun sig signal :delay delay :chunk-delay chunk-delay
+Construct a delayed version of @var{signal}, which must be a signal or a
+list of signals.
+
+The actual delay is determined by the sum of the delays specified by
+@var{delay} and @var{chunk-delay}.  The first, @var{delay}, specifies
+the delay in terms of single elements that are transported over the
+signals.  The other one, @var{chunk-delay}, works in terms of the chunk
+size of the input port that the delayed signal will be connected to.
+For example, if a signal transports complex values and the delayed
+version is connected to an input port that consumes three complex values
+in each cycle, specifying @samp{:delay 1} will delay by one complex
+value, while @samp{:chunk-delay 1} will delay by three complex values.
+@end defun
+
+
+@node Blocks and Components
+@section Blocks and Components
+
+You can use the function @samp{make-block} to create either a strictly
+@dfn{hierarchical block} or a @dfn{primitive block}.  You can make the
+block definition more convenient by using one of the macros
+@samp{block-lambda} and @samp{define-block}.
+
+Once a block object has been created by one of the methods above, it can
+be treated like a procedure object and applied to arguments.  Such an
+application of a block object will instantiate a new component into the
+current net.
+
+For primitive blocks, the instantiation will carry out all the magic
+needed to make the process defined by the C++ code appear in the current
+net.  For hierarchical blocks, the instantiation procedure has been
+specified when the block was defined.  The procedure will receive the
+filtered arguments that the block object has been applied to to initiate
+the instantiation.
+
+This instantiation procedure can instantiate sub-components, and it can
+set the exit predicate and epilog procedure of the created component.
+
+The instantiation makes use of the concept of a @dfn{current component}.
+Block instantiations always add the resulting components to the current
+component and functions like @samp{set-exit-predicate} affect the
+current component.  The top-most component is constructed by
+@samp{sim-run} and is current while the setup function of @samp{sim-run}
+is called.
+
+@defun  make-block :name name :primitive shared-object
+@defunx make-block :name name :interface interface :instfunc instfunc
+Create a new block with name @var{name} (a string) and return it.
+
+When @var{shared-object} is specified, it will be dynamically linked
+into the running Guile process and the interface and instantiation
+function of the block will be automatically derived from it.
+@ref{Writing Primitive Blocks in C++} for how to create such shared
+objects.
+
+When @var{interface} and @var{instfunc} are specified, they define the
+interface and instantiation function of the block directly.  The
+@var{interface} should be a list of @dfn{formals} and each formal is a
+list of the form
+
+@smallexample
+(@var{kind} @var{name} [@var{default}])
+@end smallexample
+
+@noindent
+where @var{kind} (a symbol) describes what kind of formal it is (i.e. a
+port or a generic), and @var{name} (a symbol) is the name of the formal.
+The following table shows the possible values for @var{kind}.
+
+@table @code
+@item <
+input port
+@item <<
+input multiport
+@item >
+output port
+@item >>
+output multiport
+@item =
+generic
+@end table
+
+For formals that describe a generic, @var{default} is the default value
+for the generic when it is not given a value during instantiation.
+
+The function @var{instfunc} will be called when the block is
+instantiated.  it will receive one argument for each formal in
+@var{interface}, in the same order as the formals appear in
+@var{interface}.  For formals that are ports, the argument will be a
+list of signals that should be connected to the port.  When the port is
+not a multiport, the list is guaranteed to contain exactly one signal.
+For formals that are generics, the argument will be the value given to
+that generic, or the default value from the formal.
+@end defun
+
+@defmac block-lambda name :primitive shared-object
+@defmacx block-lambda name :interface interface body...
+@defmacx block-lambda (name formal ...) body...
+This macro expands into a call to @samp{make-block}.
+
+The first form is equivalent to
+
+@smallexample
+(make-block :name "@var{name}" :primitive @var{shared-object})
+@end smallexample
+
+@noindent
+Note that @var{name} is converted to a string for make-block.
+
+The second form is equivalent to
+
+@smallexample
+(make-block :name "@var{name}" :interface '@var{interface}
+            :instfunc (lambda @var{instargs} @var{body...}))
+@end smallexample
+
+@noindent
+where @var{instargs} is a list of the names of all formals of
+@var{interface}, i.e., the result of @samp{(map cadr '@var{interface})}.
+Note that @var{interface} is not evaluated.
+
+The third form is equivalent to
+
+@smallexample
+(block-lambda name :interface (formal ...) body...)
+@end smallexample
+
+@noindent
+that is, it is just a more compact version of the second form.
+
+@end defmac
+
+@defmac  define-block name :primitive shared-object
+@defmacx define-block name :interface interface body...
+@defmacx define-block (name formal...) body...
+The @var{define-block} macro is a combination of @var{define} and
+@var{block-lambda}, in the following hopefully obvious ways
+
+@smallexample
+(define @var{name} (block-lambda @var{name} :primitive @var{shared-object}))
+(define @var{name} (block-lambda @var{name} :interface @var{interface}
+                                 @var{body}))
+(define @var{name} (block-lambda (@var{name} @var{formal ...}) @var{body...}))
+@end smallexample
+
+@end defmac
+
+@defun @var{block} :key value ...
+When an object that has been returned from @samp{make-block} is applied
+to arguments, it will create a new component.
+
+The new component is added as a child of the @dfn{current component}, is
+in turn made the current component and the instantiation function
+of @var{block} is called.  After the instantiation function has
+returned, the current component is reverted to its previous value.
+
+The @var{key}, @var{value} pairs determine the arguments to the
+instantiation function.  Each @var{key} must correspond to a name of a
+formal of the block and @var{value} will be passed to the instantiation
+function.
+
+In addition to keys that correspond to the formals of the interface of
+@var{block}, you can also use the key @samp{:name} to give a name to the
+newly created component.  The name must be a string and can be used with
+@samp{find-comp}.  When no name is given, a default name is constructed
+from the name of the block and a sequence number.  Names must be unique
+among all children of a given component.
+
+The newly created component is returned as the value of the function
+call.
+@end defun
+
+@defun set-exit-predicate function
+Set the exit predicate of the current component to @var{function}, a
+function with no arguments.  The simulation stops when the exit predicate
+of the top-most component returns true.  The exit predicates are only
+evaluated when a process explicitely requests it.
+
+The default exit predicate of a component returns true when any of the
+exit predicates of the children of the component returns true.
+
+While @var{function} is running, its component is again the current
+component.  This is useful when you want to use @samp{find-comp}, for
+example.
+
+@end defun
+
+@defun finished? comp
+Evaluate the exit predicate of @var{comp}.
+@end defun
+
+@defun find-comp name
+Search the children of the current component for a component named
+@var{name}, a string.  Signal an error when it is not found.
+@end defun
+
+@defmac exit-expression exit-expr
+Set the exit predicate of the current component by translating
+@var{exit-expr} into a function and passing it to
+@samp{set-exit-predicate}.  The form @var{exit-expr} is translated into
+a Scheme expression @var{scheme-expr} according to the following rules
+
+@smallexample
+(and @var{exit-expr} ...)  =>   (and @var{scheme-expr} ...)
+(or @var{exit-expr} ...)   =>   (or @var{scheme-expr} ...)
+@var{symbol}               =>   (finished? @var{symbol})
+@var{string}               =>   (finished? (find-comp @var{string}))
+@end smallexample
+
+@noindent
+and the whole @samp{exit-expression} form is translated as
+
+@smallexample
+(set-exit-predicate (lambda () @var{scheme-expr}))
+@end smallexample
+
+@end defmac
+
+@defun set-epilog function
+Set the epilog function of the current component to @var{function}, a
+function of no arguments.  The epilog function of all components is run
+when the simulation has stopped.  The epilog functions of all children
+of a component are run before the epilog function of the component
+itself.  While an epilog function runs, its component is the current
+component.  The return value of the epilog function of the top-most
+component is the result of the corrsponding @samp{sim-run} call, but all
+other return values are ignored.
+@end defun
+
+@defmac epilog body...
+Set the epilog function of the current component like so
+
+@smallexample
+(set-epilog (lambda () @var{body...}))
+@end smallexample
+@end defmac
+
+@defmac results :key value ...
+Set the results of the current component according the the @var{key},
+@var{value} pairs.  For each pair, the result named by @var{key} is set
+to @var{value}.  These results can be retrieved with the function
+@samp{result}.
+@end defmac
+
+@defun result comp res
+Retrieve the result named by @var{res}, a string, from the component
+@var{comp}.  When @var{comp} is a string, @samp{find-comp} is used to
+find the corresponding component.
+@end defun
+
+@node Simulation control
+@section Simulation control
+
+A simulation consists of a call to @samp{sim-run}.  The simulation is
+constructed, executed and the results are gathered under the control of
+@samp{sim-run}.
+
+@defun sim-run setup args ...
+Run a simulation.  A new empty component is created and made current.
+The component is of a special type and is also installed as the current
+net.  The function @var{setup} is called, passing it the @var{args}.  It
+is expected that @var{setup} will instantiate new components into the
+top-level component and that it will set the exit predicate and epilog
+functions, if it wants to.  After @var{setup} has returned, the
+instantiated components are post processed into a runnable simulation,
+and this simulation is then executed.  When the exit predicate of the
+top-level component becomes true, the simulation is stopped and all
+epilog functions of the components are called bottom up.  The return
+value of the epilog function of the top-level component is returned as
+the value of @samp{sim-run}.
+@end defun
+
+@defun set-verbose bool
+Set the verboseness of the current simulation to @var{bool}.  When
+@var{bool} is true, a lot of information about the constructed
+simulation net and the schedule is printed prior to executing the
+simulation.
+@end defun
+
+@defun set-inspect-on-error bool
+Determine whether the interactive inspector is started for simulation
+nets that contain errors, such as unconnected signals.  You might want
+to call this with '#t' when you need to examine a simulation net in
+detail.
+@end defun
+
+@node Writing Primitive Blocks in C++
+@chapter Writing Primitive Blocks in C++
+
+Writing blocks in C++ is right now the only way to create processes.
+The interface of the block is specified by filling out some information
+structures, and the executable code of the block is defined by deriving
+a new class from a predefined class and overwriting some virtual
+functions of that base class.
+
+You need to include the header file @samp{<gossip/sim.h>} in your
+programs to access the discussed features.  The final block program must
+be a shared library that can be dynamically linked on your platform.  As
+of now, we leave the details of this to you but the goal is of course to
+eventually use libtool or some derived mechanism.
+
+The typical layout of a C++ source file that defines a block is
+
+@smallexample
+#include <gossip/sim.h>
+
+sim_generic generics[] = @{
+  @var{generic declarations},
+  NULL
+@};
+
+sim_result results[] = @{
+  @var{result declarations},
+  NULL
+@};
+
+sim_port inputs[] = @{
+  @var{input port declaration},
+  NULL
+@};
+
+sim_port outputs[] = @{
+  @var{output port declarations},
+  NULL
+@};
+
+struct @var{component} : sim_comp
+@{
+
+  void
+  init ()
+  @{
+    @var{initialization code}
+  @}
+
+  void
+  step (const sim_data **in, sim_data **out)
+  @{
+    @var{process code}
+  @}
+
+  void
+  epilog ()
+  @{
+    @var{termination code}
+  @}
+@};
+
+SIM_DECLARE_BLOCK (@var{component}, generics, results, inputs, outputs);
+@end smallexample
+
+You can leave out the things that you don't need.
+
+@menu
+* Interfaces in C++::           
+* Processes in C++::            
+* More Convenience::            
+@end menu
+
+@node Interfaces in C++
+@section Interfaces in C++
+
+The interface definition of a C++ block consists of declarations for
+generics, results, input ports, and output ports.  You have to provide a
+table for any of these categories that you want to use.  The table for
+the generics consists of entries of the type @samp{sim_generic}, the
+result table is a vector of @samp{sim_result} objects and the input and
+output port tables have entries of type @samp{sim_port}.  Each of
+@samp{sim_generic}, @samp{sim_result} and @samp{sim_port} is a simple
+struct that you need to initialize.
+
+The initialization is done by using macros that will expand into an
+initializer for such a struct.  For example,
+
+@smallexample
+SIM_GENERIC ("foo")   =>   @{ "foo" @}
+@end smallexample
+
+@noindent
+but you are not supposed to know anything about the precise layout of
+any of the @samp{sim_generic}, @samp{sim_result} and @samp{sim_port}
+structures.
+
+The tables are brought together by the @samp{SIM_DECLARE_BLOCK} macro.
+
+@defmac SIM_DECLARE_BLOCK (@var{component}, sim_generic *@var{generics}, sim_result *@var{results}, sim_port *@var{inputs}, sim_port *@var{outputs})
+
+This macro expands into the necessary magic code to register
+@var{component} with Gossip.  The first argument, @var{component}, is
+the name of the new type that implements the block and its only
+process, @ref{Processes in C++}.  The rest are the tables for the
+interface.  You can use @samp{NULL} for an empty table.
+@end defmac
+
+
+@subsection Declaration Macros for Generics
+
+There is only one macro for declaring a generic.  Generics itself do not
+specify a type or whether they have a default value.  These issues are
+handled by the @samp{get} functions, below.
+
+@defmac SIM_GENERIC (char *@var{name})
+Declare a generic of name @var{name}.  You can retrieve the value of
+this generic with one of the @samp{get} functions in your @samp{init}
+function.
+@end defmac
+
+@subsection Declaration Macros for Results
+
+@defmac SIM_RESULT (char *@var{name})
+Declare a result of name @var{name}.  You can set results with one of
+the @samp{set} functions in your @samp{epilog} function.
+@end defmac
+
+@subsection Declaration Macros for Ports
+
+In addition to the general port declaration macros @samp{SIM_PORT} and
+@samp{SIM_MULTI_PORT}, there are also macros to declare types of a
+specific type.
+
+@defmac SIM_PORT (char *@var{name}, @var{type}, size_t @var{chunk})
+Declare a port of name @var{name}, of type @var{type}, with an initial
+chunk size of @var{chunk}.  The @var{type} should be a C++ identifier
+that names a valid type, for example @samp{int} or some typedefed name.
+Data will be exchanged on this port in units that are a multiple of
+@code{sizeof(@var{type})}.
+@end defmac
+
+@defmac SIM_MULTI_PORT (char *@var{name}, @var{type}, size_t @var{chunk})
+Analogous to @samp{SIM_PORT}, but declare a multiport.  Only the last
+port in a table can be a multiport.
+@end defmac
+
+@defmac SIM_INT_PORT (char *@var{name}, size_t @var{chunk})
+Declare a port with name @var{name}, type @samp{"sim_int"} and initial chunk
+size @var{chunk}.
+@end defmac
+
+@defmac SIM_MULTI_INT_PORT (char *@var{name}, size_t @var{chunk})
+Declare a multiport with name @var{name}, type @samp{"sim_int"} and initial
+chunk size @var{chunk}.
+@end defmac
+
+@defmac SIM_COMPLEX_PORT (char *@var{name}, size_t @var{chunk})
+Declare a port with name @var{name}, type @samp{"sim_complex"} and
+initial chunk size @var{chunk}.
+@end defmac
+
+@defmac SIM_MULTI_COMPLEX_PORT (char *@var{name}, size_t @var{chunk})
+Declare a multiport with name @var{name}, type @samp{"sim_complex"} and
+initial chunk size @var{chunk}.
+@end defmac
+
+@node Processes in C++
+@section Processes in C++
+
+Blocks that are written to the C++ interface of @samp{gossip-sim} always
+instantiate exactly one process and cannot instantiate any
+sub-components.  To define this process, you derive a new class from the
+existing class @samp{sim_comp} and overwrite some virtual functions of
+@samp{sim_comp}.  Inside your versions of these virtual functions, you
+can use other functions provided by @samp{sim_comp} to retrieve the
+values of generics, for example, or set the chunk sizes of the ports of
+the component.
+
+You can overwrite @samp{sim_comp::init} and @samp{sim_comp::epilog} to
+define the initialization and termination actions of your block and you
+must overwrite @samp{sim_comp::step} to define the process code.
+
+@deftypeop {Overwritable Method} sim_comp {virtual void} init ()
+This virtual function is called when the block defined by the
+@samp{this} object is instantiated.  Typically, you will use one of the
+@samp{get} functions to retrieve the values of the generics of your
+block and maybe call @samp{set_in_chunk} or @samp{set_out_chunk} to
+adjust the chunk sizes of some ports.
+@end deftypeop
+
+@deftypeop {Overwritable Method} sim_comp {virtual void} epilog ()
+This virtual function is called when the simulation has stopped.
+Referring to the general description of the simulation model, this is
+the epilog function of the component.  Typically, you will use one of
+the @samp{set} functions or some other means to record the results of
+the component, if there are any.
+@end deftypeop
+
+@deftypeop {Overwritable Method} sim_comp {virtual void} step ({const sim_data} **in, sim_data **out)
+This virtual function defines the process of the component.  It is
+called whenever enough data is available at the input ports and the
+output ports can accept enough data.
+
+The data at the input ports is delivered to you as a vector of pointers
+to @samp{sim_data} objects, in the parameter @var{in}.  There is one
+pointer per connected signal.  As long as there is no input port that is
+a multiport, there is exactly one signal per port.  Then the vector of
+pointers corresponds directly to the vector @samp{sim_port} structures
+used to declare the interface of this block.  That is, @samp{in[0]}
+points to the data for the first port declared, @samp{in[1]} points to
+the data for the second port, and so on.
+
+When there is a multiport among the input ports, it must be the last one
+(as a requirement).  Say, the last port has index @i{n}.  Then the ports
+0 to @i{n}-1 are handled as described above, that is, for @i{i} = 0 to
+@i{n-1}, @samp{in[@i{i}]} corresponds to @samp{inputs[@i{i}]}.  The
+signals connected to the multiport correspond to entries in @var{in}
+with indices greater than or equal to @i{n}.  When there are @i{m}
+signals connected to the multiport, their data can be found in
+@samp{in[n]} to @samp{in[n+m-1]}.
+
+The length of the vector @var{in} can be determined by calling
+@samp{get_n_in}.  This is also the only way to find out how many signals
+have been connected to the multiport, if there is one.
+
+Each pointer in @var{in} points to objects of type @samp{sim_data}.
+This type is of no interest, because the first thing you need to do is
+to cast the pointer to the right type for the port.  The right type is a
+pointer to the type as used in the corresponding @samp{SIM_PORT}
+declaration.  For example, if you declared port 0 to be of type
+@samp{int}, you would typically do something like this at the start of
+@samp{step}:
+
+@smallexample
+const int *in0 = (const int *)in[0];
+@end smallexample
+
+Each pointer in @var{in} points to as many objects of the right type as
+specified by the chunk size of the corresponding port.  The chunk size
+has either been set by calling @samp{set_in_chunk} in @samp{init}, or,
+if no call to @samp{set_in_chunk} has occured, it defaults to the value
+in the corresponding @samp{SIM_PORT} declaration.
+
+Output ports are handled in exactly the same way as input ports,
+substituting @var{out} for @var{in}, @samp{get_n_out} for
+@samp{get_n_in}, and @samp{set_out_chunk} for @samp{set_in_chunk}.  Each
+pointer in @var{out} points to enough memory to hold as many objects of
+the right type as specified by the chunk size of the corresponding port.
+You are supposed to write the computed data for the output ports into
+this memory.
+
+You cannot change the chunk size from within @samp{step}, only from
+@samp{init}.
+@end deftypeop
+
+@deftypeop {Overwritable Method} sim_comp {virtual void} step (int steps, {const sim_data} **in, sim_data **out)
+This variant of the @samp{step} function has essentially the same
+function, but for very simple computations that only require as many
+time as a few function call overheads, it might speed up the simulation
+significantly to use this version of @samp{step} instead.
+
+The additional parameter @var{steps} specifies how many times the basic
+computation of the process should be performed.  That is, the input
+ports have @var{STEPS} times as much data outstanding, and the process
+should produce @var{STEPS} times as much data for the output ports, as
+for the normal variant of the @samp{step} function.
+@end deftypeop
+
+The following functions provide services that you can use in your
+@samp{init}, @samp{epilog}, or @samp{step} functions.
+
+@deftypemethod sim_comp {const char *} get_name ()
+Return the name of the component.  You should prefix all your messages
+to @samp{stdout} or @samp{stderr} with this name to make it easy to
+distinguish messages from different components.  Using the name of the
+block is not sufficient for this, because there can be many components
+that have been instantiated by the same block.
+@end deftypemethod
+
+@deftypemethod  sim_comp int get_n_in ()
+@deftypemethodx sim_comp int get_n_out ()
+Return the number of connected input or output signals, respectively.
+This is the size of the @var{in} (or @samp{out}) vector of the
+@samp{step} functions.
+@end deftypemethod
+
+@deftypemethod  sim_comp bool get (bool &var, const char *name, bool def)
+@deftypemethodx sim_comp void get (bool &var, const char *name)
+@deftypemethodx sim_comp bool get (int &var, const char *name, int def)
+@deftypemethodx sim_comp void get (int &var, const char *name)
+@deftypemethodx sim_comp bool get (unsigned int &var, const char *name, unsigned int def)
+@deftypemethodx sim_comp void get (unsigned int &var, const char *name)
+@deftypemethodx sim_comp bool get (long &var, const char *name, long def)
+@deftypemethodx sim_comp void get (long &var, const char *name)
+@deftypemethodx sim_comp bool get (unsigned long &var, const char *name, unsigned long def)
+@deftypemethodx sim_comp void get (unsigned long &var, const char *name)
+@deftypemethodx sim_comp bool get (long long &var, const char *name, long long def)
+@deftypemethodx sim_comp void get (long long &var, const char *name)
+@deftypemethodx sim_comp bool get (unsigned long long &var, const char *name, unsigned long long def)
+@deftypemethodx sim_comp void get (unsigned long long &var, const char *name)
+@deftypemethodx sim_comp bool get (double &var, const char *name, double def)
+@deftypemethodx sim_comp void get (double &var, const char *name)
+@deftypemethodx sim_comp bool get (sim_complex &var, const char *name, sim_complex def)
+@deftypemethodx sim_comp void get (sim_complex &var, const char *name)
+@deftypemethodx sim_comp bool get (const char *&var, const char *name, const char *def)
+@deftypemethodx sim_comp void get (const char *&var, const char *name)
+@deftypemethodx sim_comp bool get (int *&var, int &len, const char *name, int *def, int def_len)
+@deftypemethodx sim_comp void get (int *&var, int &len, const char *name)
+@deftypemethodx sim_comp bool get (double *&var, int &len, const char *name, double *def, int def_len)
+@deftypemethodx sim_comp void get (double *&var, int &len, const char *name)
+@deftypemethodx sim_comp bool get (sim_complex *&var, int &len, const char *name, sim_complex *def, int def_len)
+@deftypemethodx sim_comp void get (sim_complex *&var, int &len, const char *name)
+@deftypemethodx sim_comp  bool get (SCM &var, const char *name, SCM def)
+@deftypemethodx sim_comp void get (SCM &var, const char *name)
+Store the value of the generic named @var{name} in @var{var}.  When no
+value for the generic @var{name} has been specified during
+instantiation, use @var{def} instead and return @samp{false}.  When
+@var{def} has not been used to provide a default value, return
+@var{true}.  When no @var{def} has been specified in the call to
+@code{get} and no value has been specified in the component
+instantiation for @var{name}, and error is signalled.
+
+The variants differ only in the type of @var{var}.  The type
+@samp{sim_complex} is for complex values where real and imaginary part
+are each of type @samp{double}.  The variants where @var{var} is a
+pointer and an additional @var{len} parameter is present, convert
+vectors and return a pointer to a new array in @var{var} and the length
+of the new array in @var{len}.  You should not free the memory of this
+array, it is freed automatically when the component is destroyed.
+
+The list of @samp{get} methods will be extended in the future.
+@end deftypemethod
+
+@deftypemethod  sim_comp void set (const char *name, int val)
+@deftypemethodx sim_comp void set (const char *name, double val)
+@deftypemethodx sim_comp void set (const char *name, sim_complex val)
+Store @var{val} as the result named @var{name}.
+@end deftypemethod
+
+@deftypemethod  sim_comp void set_in_chunk (int input_id, size_t chunk)
+Set the chunk size of the input port with index @var{input_id} to
+@var{chunk}.  This can only be called from @samp{init}.
+@end deftypemethod
+
+@deftypemethod sim_comp void set_out_chunk (int output_id, size_t chunk)
+Set the chunk size of the input port with index @var{output_id} to
+@var{chunk}.  This can only be called from @samp{init}.
+@end deftypemethod
+
+@deftypemethod sim_comp void finish ()
+Signal that this component would like the simulation to stop.  The
+finished flag of the component is raised and the exit predicate of the
+simulation is evaluated.  The simulation is only stopped when the exit
+predicate returns true, so you should be prepared to carry on with the
+simulation.
+
+You can call @samp{finish} from @samp{init}.  In that case, the
+simulation will not start.  When you call @samp{finish} from @samp{step}
+you must nevertheless compute the right values for the output ports.
+
+The function @samp{finish} will only evaluate the exit predicate the
+first time it is called for a given component.
+@end deftypemethod
+
+@node More Convenience
+@section More Convenience
+
+You might have noticed the need for the awkward casts in @samp{step} to
+get the types right.  For some restricted cases, there is also a more
+convenient way.  When all of your input ports have the same type, and
+all of your output ports have the same type (but not necessarily the
+same as the input ports), then you can get away with more elegant code.
+
+Currently this only works when both of the input and output types are
+either @samp{sim_complex} or @samp{sim_int}.  The type
+@samp{sim_complex} is a complex value where both real and imaginary part
+are of type @samp{double}.  The type @samp{sim_int} is a signed integer
+of at least 32 bits.  In the future, we will also provide a method to
+extend this support to other types.
+
+When your block meets the above conditions, you can derive your new
+class from some other predefined class than @samp{sim_comp}.  This class
+works just like @samp{sim_comp}, but has @samp{step} functions with the
+right parameter types.  For example, the class @samp{sim_complex_comp}
+works for components that have only @samp{sim_complex} ports and defines
+@samp{step} function with the following signatures:
+
+@smallexample
+void step (const sim_complex **in, sim_complex **out)
+void step (int steps, const sim_complex **in, sim_complex **out)
+@end smallexample
+
+Refer to the following table to find out which class to use instead if
+@samp{sim_comp}.
+
+@multitable {Input port type} {Output port type} {@code{sim_int_complex_comp}}
+@item Input port type @tab Output port type @tab Class
+@item @code{sim_int} @tab @code{sim_int} @tab @code{sim_int_comp}
+@item @code{sim_complex} @tab @code{sim_complex} @tab @code{sim_complex_comp}
+@item @code{sim_int} @tab @code{sim_complex} @tab @code{sim_int_complex_comp}
+@item @code{sim_complex} @tab @code{sim_int} @tab @code{sim_complex_int_comp}
+@end multitable
+
+@node Index
+@unnumbered Index
+
+@printindex cp
+
+@bye

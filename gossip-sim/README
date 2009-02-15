@@ -1,0 +1,58 @@
+This is gossip-sim, the synchronous data flow simulation engine of the
+GOSSIP project.
+
+Look into INSTALL for installation instructions.  After installation,
+you should read the included manual and try out the examples.  Then at
+least skim thru the reference part of the documentation.  That should
+enable you to write your own simulations.
+
+Right now, you should expect to write all of your simulation models
+yourself as extensive libraries with ready-made blocks are not yet
+available.
+
+
+License
+-------
+
+Gossip-sim is distributed under the terms of the GNU General Public
+license, as found in the file COPYING.
+
+Contributing
+------------
+
+If you want to contribute to GOSSIP, here are some ideas:
+
+   - Test drive it until it breaks and report the bugs.
+
+   - Proof read the documentation and report any bad usage of English,
+     typoraphical errors, inconsistencies, omissions, wierd
+     explanations, etc.  New language to replace the bad parts is most
+     appreciated.
+
+   - Enhance the web presence of GOSSIP.
+
+   - Think of user interface enhancements and contribute your ideas.
+
+   - Hang out on the mailing list and help other users.
+
+   - Write block programs and distribute them freely.
+
+   - Start to collect block programs and release well maintained
+     libraries of them.
+
+   - Take on one of the other parts of GOSSIP, for example gossip-ed,
+     the schematic capture tool.
+
+   - Or simply spread the word (and the disk)!
+
+
+How to get into contact
+-----------------------
+
+GOSSIP is hosted on Savannah.  The home page is
+
+    http://www.freesoftware.fsf.org/gossip/
+
+and there you will find mailing lists, CVS, etc and will have the
+opportunity to report bugs.  You can also reach me directly at
+<mvo@zagadka.de>

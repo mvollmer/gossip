@@ -1,0 +1,7 @@
+This is the beginning of an FEC library for GOSSIP.
+
+Codes:
+
+- Hamming (7,4)
+- BCH (15,7)
+- Golay (24,12)

@@ -1,0 +1,29 @@
+This package was debianized by Marius Vollmer <mvo@zagadka.de> on
+Fri,  4 Aug 2000 19:55:20 +0200.
+
+It was build from the sources on http://gossip.sourceforge.net.
+
+Upstream Author(s): Marius Vollmer <mvo@zagadka.de>
+
+Copyright:
+
+    Copyright (C) 2000  Marius Vollmer
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+    As a special exception, simulation block programs that are written
+    to use the interface to gossip-sim as defined in the header file
+    <gossip/sim.h> are not regarded as derived works and are not
+    subject to the conditions of the GNU GPL.

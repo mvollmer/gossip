@@ -1,0 +1,446 @@
+Todo for 0.9 (beta) release
+---------------------------
+
+- Write net inspector.
+- Better display of the 'net' data structure.
+
+  When building a large net, it is difficult to track down errors.
+  The user should be able to display only parts of it, trace the
+  connection of certain signals and the instantiation of certain
+  blocks.  The final net display should also talk more about signals
+  and not only components.
+
+- Redo prototype communication using a real Scheme data structure.
+
+  The current implementation is still from the days where components
+  were in separate processes, scary...
+
+- Seriously document the scheduler.
+
+- Handle delays that are not a multiple of the chunk size of the
+  destination port.
+
+  This will need a `staging area' to cover the case where a chunk
+  wraps around the end of the ring buffer.
+
+- Implement peephole optimizer for the scheduler.
+
+  The peephole optimizer would take a valid schedule and produce a
+  better one by combining boxes in a different way.
+
+  Optimization criteria can be space and time.  Space is saved when a
+  schedule of the form
+
+     n:
+       x: A
+       y: B
+
+  is changed to
+
+     m*n:             m = gcd(x,y)
+       x/m: A
+       y/m: B
+
+  and time might be saved when 
+
+     n:
+       x: A
+       y: B
+
+  is changed to
+
+     1:
+       n*x: A
+       n*y: B
+  
+
+  (Time saving is not so important at first.  It also has problems
+  with delays.)
+
+  The optimizer has a window size, and when the window is larger than
+  1, it can rearrange boxes to find a better schedule.  It will look
+  ahead in the schedule to find boxes that might be moved to be
+  adjacent to the current one, and will do so when the gcd is large
+  enough.
+
+  (Works for a window of 2 now.  That is, boxes are not moved)
+
+- "Allow other generics"
+
+    I imagine to be able to write something like this:
+
+    sim_generics gens[] = {
+      SIM_GENERIC ("foo"),
+      SIM_ALLOW_OTHER_GENERICS,
+      NULL
+    };
+
+    That way, a GUI would still have a list of generics to work from, and
+    could even offer a way to specify arbitrary generics in case it sees a
+    `allow other generics' flag.
+
+    At the same time, specifying superflous generics can be flagged as
+    an error.
+
+- Support for unspecified types and chunk sizes
+
+    However, what I'd like to add to Gossip is some way of leaving chunk
+    sizes and types of ports unspecified.  You would then get these
+    parameters dictated from the outside.  For an output port, the chunk
+    size would be the GCD of all specified chunk sizes of the input ports
+    connected to this output port, or 1 if all destinations have an
+    unspecified chunk size.  For an input port, the chunk size will be the
+    same as the chunk size of the source port.  Typewise, all ports on a
+    signal are forced to the same type, if that is possible.  If all types
+    are unspecified, an error results.
+
+
+    With unspecified types, we could easily implement a versatile type
+    conversion block.  You would just insert it into a signal and it would
+    convert between the connected types (if it knows about them).
+
+- New multi-ports implementation
+
+    >What about having a new C++ class sim_multi_comp that can take
+    >multi-ports?  The ordinary sim_comp wouldn't be able to have
+    >multi-ports any longer.
+
+    >The step routine of a sim_multi_comp would present the signal buffer
+    >with one more level of indirection, as a "sim_data ***in".  You would
+    >then write in[P][S][D] to get at element D in the buffer of subport S
+    >of multi-port P.
+    >
+    >A multi-port could be generalized to have a minimum number of
+    >connected signals and a maximum number (with the option of specifying
+    >`infinite' for the maximum).  A normal port would then be a special
+    >case of a multi-port with minimum == maximum == 1.
+    >
+    >These minima, maxima stuff might not be of great use for the block
+    >writer, but it would simplify the inner logic of Gossip considerably,
+    >I hope.
+
+- Better names for hierachical components.
+
+  Components should have a path name that makes their position in the
+  hierachy explicit.
+
+- Better display of the 'net' data structure.
+
+  When building a large net, it is difficult to track down errors.
+  The user should be able to display only parts of it, trace the
+  connection of certain signals and the instantiation of certain
+  blocks.  The final net display should also talk more about signals
+  and not only components.
+
+- support more generic types
+
+- rethink signal connection implementation.  It's a bit messy right
+  now.
+
+- extend inst-errors to work with more functions.
+
+- more complete error checks and warnings
+
+  Test for more erroneous/warnable situations, like unrecognized
+  keyword parameters, etc.
+
+- regression test suite
+
+  This one is for Don Martin.
+
+- Go thru all "XXX" markers.
+
+- Break sim.h dependency on libguile.h
+
+- Consider negative delays (for destroying data).  Needs
+  initialization schedule.
+
+- find clean way for building blocks
+
+  Maybe have "gossip-sim-config" that can deliver the right linker
+  flags.
+
+  Hmm, first thing would be to use libltdl for dynamic linking and
+  simply mandate libtool for building primitive blocks.
+
+- Lay basis for maintaining binary backward compatability between
+  gossip-sim and block programs.
+
+
+Todo for 1.0 release
+--------------------
+
+- Fix bugs
+
+
+Later
+-----
+
+- buffer reduction
+
+  Forcefully reduce buffers that are too large below a user-defineable
+  threshold.  This will be achieved by having fractional `ticks' in
+  the schedule.  For example, two blocks that are connected by a very
+  large buffer and have a tick count of 13 and 17, respectively, could
+  be forced to a tick count of 13/10 and 17/10.  This will preserve
+  the rate between the blocks and will reduce the buffer by something
+  less than 10.  This needs support from the C simulation engine of
+  course, but that support should be fairly localized within the
+  signal code.
+
+  The user should be able to control this reduction to a large extent.
+
+  This facility can then also be used to allow delays that are not a
+  multiple of the input chunk size of a delayed port.
+
+- buffer reuse
+
+  It is possible to reuse a buffer for more than one signal.  We need
+  to find the lifetimes of the signals during one run of the schedule
+  and signals that do have non-overlapping lifetimes can share a
+  buffer.  the lifetime of a signal is the time when it's buffer is
+  not empty.  This might only work for unreduced signals, but you
+  can't have everything.
+
+- Examine dynamic scheduling vs static sacheduling.  It should be
+  possible to get good performance out of dynamic scheduling as well
+  and the added flexibility might be worth it.
+
+
+Wild ideas
+----------
+
+- Meta simulations
+
+  There should be a block that can encapsulate a complete simulation
+  and turn the generics and results of the simulation into input and
+  output ports.  That way, the control of a simulation could be
+  described with the same tools as the simulation itself.  For
+  example, the statistical postprocessing of the gathered results
+  could be done with components as well.  This would lead to a nice
+  way to use the schematic entry also for simulation control.
+
+  However, meta-simulations will need a more general simulation engine
+  as we have now.  One should be able to write blocks for
+  meta-simulations in Scheme and the signals have to transport the
+  whole spectrum of Scheme values to make meta-simulations really
+  useful.
+
+  Maybe we should have two simulation engines: one for low-level,
+  speedy simulations where all blocks are written in C++ and the
+  scheduling is static; and one for higher-level, less speedy but more
+  flexible simulations where you can also have Scheme blocks, dynamic
+  scheduling and more general data types.
+
+  Ideally, the two simulation engines should be used in concert, so
+  that the parts of a simulation net that consist only of C++ blocks
+  are handled by the fast engine (or multiple instances of it) and the
+  rest is handled by the slower engine.
+
+  Thought needs to go into the interface between Scheme components
+  (that produce/consume SCM values on their ports) and C++ components,
+  that expect and produce C++ types.  Maybe have a general notion of
+  type converters, one special case of which would be the existing
+  converter between different bit widths.
+
+  These individual steps come to mind:
+
+  - Neglect C++ blocks for a moment and write a simple minded stream
+    driven simulator completely in Scheme, using the existing block
+    and component machinery of course.
+
+  - Implement type converters for C++ signals.
+
+  - Write a block that can encapsulate a net of C++ blocks as a
+    component that can be used with the Scheme engine.  This needs
+    quite some rewrite of the C++ engine, probably.
+
+  - Automatically partition a net so that the C++ components are
+    wrapped with the block from above.
+
+
+Archive of stuff already done
+-----------------------------
+
+This stuff has already been implemented, but is kept here for
+nostalgic reasons.
+
+- names for components
+
+  Components should get a common generic `name'. The default name will
+  be the block name plus a sequence number.
+
+- allow names of components (strings) in exit expressions
+
+  Symbols will continue to refer to Scheme variables, and strings will
+  be translates into calls to `find-comp'.
+
+- fix `pair finding bug'
+
+  Choose only pairs that are really connected.  Trivial.
+
+- find clean way for installing blocks
+
+  Blocks are contained in libraries.  A library is a special kind of
+  module that can load Scheme files on demand.  Those Scheme files are
+  searched in a list of directories.  That list is created when a
+  library is first opened by searching the library path for
+  directories with the name of the library.  All found directories
+  make it onto the list.
+
+  When a block is referenced for the first time, a file with its name
+  is searched in the list of directories, either with a ".prim" or a
+  ".block" extension.  The first variant found wins.  If its a
+  ".block", it is loaded into the library module.  If it is a ".prim"
+  file, it is inserted into the module via a default `define-block'
+  expression.
+
+  Add renaming imports.
+
+- Safe and useful types for generics.
+
+  Right now, generics are esentially untyped.  Best thing would
+  probably be to just pass the generic values as SCM and provide
+  convenience functions for extracting them to C.
+
+  The type of a generic would then be description of allowable values.
+  First, all generics would be of type "any", then we could gradually
+  introduce new useful types like enumerations.
+
+- step count
+
+  Performance can be greatly increased when a block has its own inner
+  loop.  This should be supported by passing a suitable step_count
+  to the step routine.  This should really be done on a step by step
+  basis to prepare the C++ interface for dynamic scheduling.
+
+- Remove flags
+
+  I see the use of flags, but they complicate the inner workings
+  significantly, and I don't like them, so they go away.  Maybe, when
+  all other things have been done to the simulation engine, we can put
+  them back in.  But only maybe.
+
+- Rename block structs
+
+  We should have sim_block (now sim_comp) as the most basic struct.
+  Derived structs will be
+
+     sim_complex_block     (now sim_block)
+     sim_int_block         (now sim_bit_block, bits will go)
+     sim_int_complex_block (now sim_bit_input_block)
+     sim_complex_int_block (now sim_bit_output_block)
+
+  Additional derived blocks might be defined as need be.  They are for
+  convenience only and the primary documented thing should be
+  sim_block, with the casting made user visible.  C++ is a crock, no
+  need to hide that.
+
+- Express chunk sizes in terms of bytes.
+
+- `outward generics'
+
+  Let's call them "results".  A component should be able to compute
+  some values during the course of a simulation and make them
+  available to the simulation script.  This is the first step towards
+  `meta-simulations', see below.
+
+- Provide support macros for constructing blocks.
+
+  I'm thinking of a `structure' macro, to be complemented by a
+  `behaviour' macro later on when we have primitive blocks written in
+  Scheme.
+
+- Re-examine flush_step.
+
+  It's not needed.
+
+- More general type converters
+
+  Remove bit twiddling and replace with a bit twiddler block.  Should
+  be about the same performance and way cleaner to implement.  The
+  schematic entry might insert such converters automatically or make
+  suggestions.
+
+  This change will reduce sizes to be multiples of `sim_data' which
+  will obliterate the need for separate bit width, again making the
+  implementation cleaner.
+
+- `one driver, multiple reader' support
+
+  This is for optimizing the `forking' of a signal.  It should be no
+  problem the have a buffer be read multiple times, even reduced ones.
+  The readers need to maintain separate states, however.
+
+- better error messages
+
+  Error messages should contain more information.  Guile error
+  reporting itself isn't too great, so maybe we just have to cope.
+
+- general way of setting options in the sim-file
+
+  This should include the verboseness level, for a start.  Options
+  should be hung off the current-net.  There should be a general way
+  of setting arbitrary options (or `properties', rather) and specific
+  convenience functions.  Setting and retrieving options can be
+  costly.
+
+- define some options for the scheduler
+
+  Like whether to use the `simple' combiner or the `round-robin' one.
+
+- Reduce size of sim_block struct and rename it to sim_comp.
+
+- Clean up set_in_data_size vs set_in_size.
+
+- Cleanup signal construction.
+
+- signal presetting
+
+  [ This is the largest pending change.  I think it should go into 0.9
+    so that people don't think gossip is crippled. ]
+
+  This is to support feedback loops. The idea is to put a certain
+  amount of values into the buffers before the simulation starts.
+  This will enable the destinations of that buffers to begin their
+  work.  Which buffers get preset is user-definable, but how many
+  preset they get probably not.  What value should the preset be?
+  Ideally it shouldn't matter, I think.
+
+- Read up on static scheduling:
+
+  E.A. Lee, D.G. Messerschmidt, "Static Scheduling of Synchronous
+  Dataflow Programs for Digital Signal Processing," IEEE Transactions
+  on Computers, February, 1987.
+
+- Make gossip-run fit for interactive use.
+
+  One should be able to use gossip-run as a shell.  This also means
+  thatw e need to find a reliable way to reload changed primitive
+  blocks into a process.
+
+- Make :delay specification functional and deprecate :chunk-delay.
+
+- Correctly calculate buffer size totals when printing.
+
+- Sketch reference documentation
+
+- Port to Solaris.
+
+- Signal merging.
+
+- redo generics in a more generic way.
+
+- free memory from converted vectors
+
+- allow signals to be connected to `open'.
+
+- Write round robin combiner
+
+  No longer appropriate.
+
+- More docs.
+
+  In particular, figure out a nice way to document blocks so that
+  their documentation can be found automatically.
+

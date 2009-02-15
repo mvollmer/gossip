@@ -1,0 +1,4 @@
+;; -*- scheme -*-
+
+(define-block (bar)
+  (foo))

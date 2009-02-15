@@ -1,0 +1,176 @@
+;; -*- Scheme -*-
+
+(import "gtk-1.2.defs")
+
+(define-object GossipCanvas (GtkLayout))
+
+(define-object GossipCanvasItem (GtkObject)
+  (fields
+   (GossipCanvas canvas)
+   (GossipCanvasItem parent)
+   (int x1)
+   (int y1)
+   (int x2)
+   (int y2)))
+
+(define-object GossipCanvasGroup (GossipCanvasItem))
+
+; (define-func gossip_canvas_item_new
+;   GossipCanvasItem
+;   ((GossipCanvasGroup parent)
+;    (type type)
+;    ((cvec double) coords)))
+   
+; (define-func gossip_canvas_item_set
+;   none
+;   ((GossipCanvasItem item)
+;    ((cvec double) coords)))
+
+(define-func gossip_canvas_item_move
+  none
+  ((GossipCanvasItem item)
+   (double dx)
+   (double dy)))
+
+;; (define-func gossip_canvas_item_scale
+;;   none
+;;   ((GossipCanvasItem item)
+;;    (double x)
+;;    (double y)
+;;    (double scale_x)
+;;    (double scale_y)))
+
+;; (define-func gossip_canvas_item_rotate
+;;   none
+;;   ((GossipCanvasItem item)
+;;    (double x)
+;;    (double y)
+;;    (double angle)))
+
+(define-func gossip_canvas_item_raise
+  none
+  ((GossipCanvasItem item)
+   (int positions)))
+
+(define-func gossip_canvas_item_lower
+  none
+  ((GossipCanvasItem item)
+   (int positions)))
+
+(define-func gossip_canvas_item_raise_to_top
+  none
+  ((GossipCanvasItem item)))
+
+(define-func gossip_canvas_item_lower_to_bottom
+  none
+  ((GossipCanvasItem item)))
+
+(define-func gossip_canvas_item_show
+  none
+  ((GossipCanvasItem item)))
+
+(define-func gossip_canvas_item_hide
+  none
+  ((GossipCanvasItem item)))
+
+(define-func gossip_canvas_item_reparent
+  none
+  ((GossipCanvasItem item)
+   (GossipCanvasGroup new_group)))
+
+(define-func gossip_canvas_new
+  GtkWidget
+  ())
+
+(define-func gossip_canvas_root
+  GossipCanvasGroup
+  ((GossipCanvas canvas)))
+
+(define-func gossip_canvas_set_scroll_region
+  none
+  ((GossipCanvas canvas)
+   (double x1)
+   (double y1)
+   (double x2)
+   (double y2)))
+
+(define-func gossip_canvas_set_pixels_per_unit
+  none
+  ((GossipCanvas canvas)
+   (double n)))
+
+(define-func gossip_canvas_scroll_to
+  none
+  ((GossipCanvas canvas)
+   (int cx)
+   (int cy)))
+
+(define-func gossip_canvas_get_item_at
+  GossipCanvasItem
+  ((GossipCanvas canvas)
+   (double x)
+   (double y)))
+
+(define-object GossipCanvasLine (GossipCanvasItem))
+(define-object GossipCanvasRE (GossipCanvasItem))
+(define-object GossipCanvasRect (GossipCanvasRE))
+(define-object GossipCanvasEllipse (GossipCanvasRE))
+(define-object GossipCanvasPolygon (GossipCanvasItem))
+(define-object GossipCanvasText (GossipCanvasItem))
+(define-object GossipCanvasGrid (GossipCanvasItem))
+
+(define-func gossip_canvas_line_move_point
+  none
+  ((GossipCanvasLine line)
+   (int index)
+   (double dx)
+   (double dy)))
+
+(define-func gossip_canvas_text_set_zoom_fonts
+  none
+  ((GossipCanvasText text)
+   ((cvec GdkFont) zoom_fonts)
+   (int unzoomed)
+   (double scale)
+   (double min_expansion)))
+
+(define-func gossip_canvas_get_width
+  int
+  ((GossipCanvas canvas)))
+
+(define-func gossip_canvas_get_height
+  int
+  ((GossipCanvas canvas)))
+
+(define-func gossip_canvas_set_float_item
+  none
+  ((GossipCanvas canvas)
+   (GossipCanvasItem item (null-ok))
+   (double x)
+   (double y)
+   (double grid_x)
+   (double grid_y)))
+
+(define-func gossip_canvas_get_float_pos
+  none
+  ((GossipCanvas canvas)
+   ((ret double) x)
+   ((ret double) y)))
+
+(define-func gossip_canvas_window_to_world
+  none
+  ((GossipCanvas canvas)
+   (double winx)
+   (double winy)
+   ((ret double) worldx)
+   ((ret double) worldy)))
+
+(options
+ (includes "#include <libgossipcanvas/gossip-canvas.h>"
+	   "#include <libgossipcanvas/gossip-canvas-line.h>"
+	   "#include <libgossipcanvas/gossip-canvas-rect-ellipse.h>"
+	   "#include <libgossipcanvas/gossip-canvas-polygon.h>"
+	   "#include <libgossipcanvas/gossip-canvas-text.h>"
+	   "#include <libgossipcanvas/gossip-canvas-grid.h>")
+ (extra-init-code "  gossip_canvas_init_extra_glue ();")
+ (init-func "gossip_canvas_init_glue"))

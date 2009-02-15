@@ -1,0 +1,31 @@
+dnl Process this file with autoconf to produce a configure script.
+AC_INIT(README)
+AM_INIT_AUTOMAKE(gossip-ed, 0.5.0)
+
+dnl Checks for programs.
+AC_PROG_CC
+AC_PROG_CXX
+AM_PROG_LIBTOOL
+
+dnl GUILE_FLAGS
+
+AM_PATH_GTK(1.2.0,,AC_ERROR(need at least Gtk+ version 1.2))
+
+AC_MSG_CHECKING(for guile-gtk libs)
+GUILE_GTK_LIBS=`build-guile-gtk libs`
+AC_SUBST(GUILE_GTK_LIBS)
+AC_MSG_RESULT($GUILE_GTK_LIBS)
+
+AC_MSG_CHECKING(for guile-gtk cflags)
+GUILE_GTK_CFLAGS=`build-guile-gtk cflags`
+AC_SUBST(GUILE_GTK_CFLAGS)
+AC_MSG_RESULT($GUILE_GTK_CFLAGS)
+
+AC_MSG_CHECKING(for canonical cflags)
+GTK_PLUS_GUILE_GTK_CFLAGS=`$srcdir/canonicalize-prefixes $GTK_CFLAGS $GUILE_GTK_CFLAGS`
+AC_SUBST(GTK_PLUS_GUILE_GTK_CFLAGS)
+AC_MSG_RESULT($GTK_PLUS_GUILE_GTK_CFLAGS)
+
+AC_OUTPUT(Makefile
+          doc/Makefile
+          libgossipcanvas/Makefile)

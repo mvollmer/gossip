@@ -1,0 +1,4 @@
+#! /bin/sh
+exec guile -e command-line-run -s "$0" "$@"
+!#
+(use-modules (gossip sim))

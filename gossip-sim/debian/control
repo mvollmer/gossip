@@ -1,0 +1,14 @@
+Source: gossip-sim
+Section: contrib
+Priority: optional
+Maintainer: Marius Vollmer <mvo@zagadka.de>
+Standards-Version: 3.0.1
+
+Package: gossip-sim
+Architecture: any
+Depends: ${shlibs:Depends}, guile1.4, libguile9-dev, libgoops4
+Description: A flexible simulator for synchronous data flow 
+ GOSSIP project is a simulation environment for use primarily in
+ communications engineering and digital signal processing.  It is
+ implemented as an extension to Guile, the Scheme implementation of
+ the FSF.  

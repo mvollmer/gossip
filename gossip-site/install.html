@@ -1,0 +1,202 @@
+<!DOCTYPE html PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html>
+<head>
+<title>The GOSSIP Simulation Environment - Installation</title>
+</head>
+<body bgcolor="#FFFFFF" text="#000000" link="#1F00FF" alink="#FF0000" vlink="#9900DD">
+<center>
+<img src=gossip-small-color.png>
+<h2><a href=index.html>The GOSSIP Simulation Environment</a></h2>
+<h1>Installation</h1>
+</center>
+
+<blockquote>
+
+<blockquote><b><font color="#FF0000">
+Not all files that are mentioned below are available yet, and the
+instructions themselves are not finished, either.  Please come back in
+a few days.  If things happen too slow, <a
+href=mailto:mvo@zagadka.de>complain</a>.
+</font></b></blockquote>
+
+<p>
+There are a number of ways to install the packages that make up the
+GOSSIP Simulation Environment.  The easiest is to install GOSSIP from
+pre-build binary packages.  The most customizable is to download the
+source code of each package and compile it yourself.
+
+<p>
+We recommend that you install GOSSIP from pre-build binary packages,
+if you can.  Right now, we only have packages for RedHat Linux on
+i386.  If you know how to build packages for other operating systems,
+and would like to package GOSSIP for them, please <a
+href=https://sourceforge.net/mail/?group_id=4049>contact</a> us.
+
+<ul>
+<li><a href=#redhat>Installation on RedHat Linux</a></li>
+<li><a href=#source>Installation from Source</a></li>
+<li><a href=#rpmbuild>Build your own RPM Packages</a></li>
+</ul>
+
+<h2><a name="redhat">Installation on RedHat Linux</a></h2>
+
+<p>
+There are RPMs available in the <a
+href=ftp://gossip.sourceforge.net/pub/gossip>ftp-space</a> for recent
+versions of RedHat Linux.  In particular, there are
+<ul>
+<li><a href=ftp://gossip.sourceforge.net/pub/gossip/gossip-sim-0.8.2-1.i386.rpm>
+gossip-sim-0.8.2-1.i386.rpm</a>
+<li><a href=ftp://gossip.sourceforge.net/pub/gossip/gossip-ed-0.5.0-1.i386.rpm>
+gossip-ed-0.5.0-1.i386.rpm</a>
+</ul>
+The packages above were tested with Helixcode's Gnome packages
+on Redhat 6.2 (Zoot).  To install one of these packages,
+run <tt>rpm</tt> like this
+
+<blockquote><tt> # rpm -U gossip-sim-0.8.2-1.i386.rpm
+</tt></blockquote>
+
+You need to be <tt>root</tt> to do this.  The packages contain
+dependency information so that you will learn what other packages you
+need to install when trying to install one of the GOSSIP packages.
+
+<p>Some packages that you might need are
+<ul>
+<li><a href=http://www.redhat.com/swr/i386/guile-1.4-2.i386.html>guile-1.4-2</a>
+<li><a href=http://www.redhat.com/swr/i386/guile-devel-1.4-2.i386.html>guile-devel-1.4-2</a>
+<li><a href=http://www.redhat.com/swr/i386/guile-oops-0.9.0-1.i386.html>guile-oops-0.9.0-1</a>
+<li><a href=http://www.redhat.com/swr/i386/guile-oops-devel-0.9.0-1.i386.html>guile-oops-devel-0.9.0-1</a>
+<li><a href=http://www.ping.de/sites/zagadka/guile-gtk/latest.html>guile-gtk-0.19-1</a>
+</ul>
+
+To uninstall a package with <tt>rpm</tt>, do something like this
+<blockquote><tt>
+# rpm -e gossip-sim
+</tt></blockquote>
+
+<h2><a name="source">Installation from Source</a></h2>
+
+<p>
+The source packages of GOSSIP follow the <a
+href=http://www.gnu.org/prep/standards_44.html>GNU standard</a> for
+configuration, which is probably familiar to you already.  In general,
+the packages themselves contain the most detailed and most upto date
+instructions on how they would like to be installed in a file called
+<tt>INSTALL</tt>, and you are expected to read them.  Here we give you
+only a quick overview of a normal installation and point you to places
+where external packages might be gotten from.
+
+<p>
+Especially when you install packages in some other location than
+<tt>/usr/local/</tt>, things are probably not so easy as they are
+portrayed here.
+
+<ol>
+<li>Make sure you have the pakages that Gossip depends on.
+
+  <p>
+  For <tt>gossip-sim</tt>, you need
+  <a href=ftp://www.gnu.org/pub/gnu/guile/guile-1.4.tar.gz>
+  <tt>guile-1.4</tt></a> and
+  <a href=ftp://www.gnu.org/pub/gnu/guile/guile-oops-0.9.0.tar.gz>
+  <tt>guile-oops-0.9.0</tt></a>.
+
+  <p>
+  For <tt>gossip-ed</tt>, you need <tt>gossip-sim</tt> and <a
+  href=http://www.gtk.org>Gtk+</a> and <a
+  href=http://www.ping.de.sites/zagadka/guile-gtk>guile-gtk</a>,
+  preferably in their latest versions.
+
+  <p>
+  The various GOSSIP library packages might require additional
+  software to be installed on your system.  Please refer to the
+  packages in question.
+
+<p>
+<li>Download the sources of <a
+href=http://download.sourceforge.net/gossip/gossip-sim-0.8.2.tar.gz>
+<tt>gossip-sim</tt></a> and <a
+href=http://download.sourceforge.net/gossip/gossip-ed-0.5.0.tar.gz>
+<tt>gossip-ed</tt></a> from the <a
+href=http://sourceforge.net/project/filelist.php?group_id=4049>File
+Release</a> area.
+
+<p>
+<li>Unpack them in some suitable directory.  The tarballs create a new
+directory that will be filled, so you don't need to worry that files
+will spill all over your current directory.
+
+<blockquote><tt>
+$ tar xzf gossip-sim-0.8.2.tar.gz<br>
+$ cd gossip-sim-0.8.2
+</tt></blockquote>
+
+<p>
+<li>Configure the sources for your system.
+<blockquote><tt>
+$ ./configure
+</tt></blockquote>
+
+Run <tt>./configure --help</tt> to learn about the options hat you can
+pass to </tt>configure</tt>.
+
+<p>
+<li>Compile the sources into the final executables.
+<blockquote><tt>
+$ make
+</tt></blockquote>
+
+<p>
+<li>Install the executables in the system.
+<blockquote><tt>
+# make install
+</tt></blockquote>
+
+You probably need to be <tt>root</tt> for this step.
+
+<p>
+<li>Repeat for the rest of the packages, like <tt>gossip-ed</tt> and
+any block libraries.
+
+</ol>
+
+<h2>
+<a name="rpmbuild"></a>Build your own RPM Packages</h2>
+
+<h4>Get the .tar.gz files</h4>
+
+You must download .tar.gz file even if you don't want to install the GOSSIP
+from .tar.gz. The .spec files are used to build rpms and, more important,
+the source code&nbsp; are keep in the .tar.gz files.
+<br>After download,&nbsp; put the .tar.gz files into
+<blockquote><tt>/usr/src/redhat/SOURCES</tt></blockquote>
+Here I assume that you are using Redhat&nbsp; and you have&nbsp; NOT change
+the configuration of the rpm. If you are using other packages like debain&nbsp;
+or you are not sure, try the following to find&nbsp; RPM_SOURCE_DIR .
+<blockquote><tt># rpm --showrc</tt></blockquote>
+You may need to trace it down since, in most of the case,&nbsp; the value&nbsp;
+depends on other macro definitions. If you are still not sure here, check
+out the www.rpm.org for more information about how to use RPM.
+<br>&nbsp;
+<h4>
+Get the .spec files</h4>
+Either download the .spec files from download section above or open .tar.gz
+file to get it.
+<br>You can modify the .spec files for your own needs
+<br>Put the .spec file where you want but remember the place.
+<h4>
+Make the rpm package</h4>
+Switch to root first and go the place where you put the .spec files before.
+<br>To build the gossip-sim
+<blockquote><tt># rpm -ba gossip-sim-0.8.spec</tt></blockquote>
+To build the gossip-ed
+<blockquote><tt># rpm -ba gossip-ed-0.0.spec</tt></blockquote>
+If it is ok, you can pick up the rpm files for your platform somewhere
+below /usr/src/redhat/RPMS depending your platform( again assuming&nbsp;
+the Redhat).
+
+</blockquote>
+
+</body>
+</html>

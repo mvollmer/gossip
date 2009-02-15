@@ -1,0 +1,7 @@
+;; -*- scheme -*-
+
+(use-library example *)
+
+(signals sig)
+(source :out sig)
+(destination :in sig)

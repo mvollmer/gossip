@@ -1,0 +1,54 @@
+Documentation
+-------------
+
+[The main point here is to resist the urge to overdesign the
+documentation system.]
+
+The documentation for Gossip blocks should be centered around
+libraries, not individual blocks.  That is, the unit of documentation
+is not a single block, but rather a complete library.  The library
+documentation will contain descriptions of its contained blocks, and
+there are conventions of how to find these descriptions given a block
+name.
+
+Documentation can be provided in several formats and we have
+conventions for each format how to find the library documentation
+given a library name, and how to find the block documentation inside
+that given a block name.  How these formats are produced is up to the
+individual author.  It is recommended to use TeXinfo, tho.
+
+Currently, three formats are specified: info, html and pdf.  It is
+recommended that all three are produced if that is possible.  Info is
+for text-only browsing and for people that like Emacs better than
+Netscape for reading documenation (me!), html is for people who want
+it (and to put the docs on the web), and pdf is for printing.
+
+
+- info
+
+For the info format, we do not specify a particular location of the
+info file for a library.  The file is found in the `usual' info
+directories under the name "gossip-lib-<library>" where <library> is
+the name of the library.  Inside a info file, a individual block is
+found by going to the index entry "<block>" in the "bl" index where
+<block> is the name of the block.
+
+- html
+
+Files in html format are installed in <prefix>/share/gossip/doc with
+names like "gossip-lib-<library>.html" or in subdirectories like
+"gossip-lib-<library>".  The name is not meaningful, it just needs to
+be unique.
+
+The documentation for a library or its blocks is found by reading a
+file named "html.index".  This file is searched for in the directories
+that make up the library.  It will list URLs pointing to the real
+documentation.  The file is a Scheme sexp giving a alist that maps
+between symbols and strings.  The symbols are the block names, the
+strings are the URLs.  The `symbol' #t refers to the library.
+Netscape is simply kicked to the found URL.
+
+- pdf
+
+PDF files are installed in <prefix>/share/gossip/doc/print/ without
+any structure imposed on them.
